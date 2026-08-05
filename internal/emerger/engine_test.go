@@ -16,4 +16,7 @@ func TestEmerge(t *testing.T) {
 	if em.STA != "G" || !em.VAL.Recoil || !em.VAL.WVC {
 		t.Fatalf("bad: %#v", em)
 	}
+	if em.EVO.Metadata == nil || em.EVO.Metadata.CapturedAt.IsZero() || em.EVO.Metadata.AIIntegrated {
+		t.Fatalf("bad metadata: %#v", em.EVO.Metadata)
+	}
 }

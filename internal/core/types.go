@@ -31,9 +31,58 @@ type Validation struct {
 }
 
 type Evolution struct {
-	Version    int      `json:"v"`
-	Supersedes string   `json:"s,omitempty"`
-	Delta      []string `json:"d,omitempty"`
+	Version    int       `json:"v"`
+	Supersedes string    `json:"s,omitempty"`
+	Delta      []string  `json:"d,omitempty"`
+	Metadata   *Metadata `json:"m,omitempty"`
+}
+
+// Facet is one face of the bounded dodecahedral capability projection.
+// The Evolution Engine governs changes to all faces and is not a thirteenth face.
+type Facet string
+
+const (
+	FacetFIELDCommand       Facet = "FIELD_COMMAND"
+	FacetEmergenceCapture   Facet = "EMERGENCE_CAPTURE"
+	FacetProgramForge       Facet = "PROGRAM_FORGE"
+	FacetProductStore       Facet = "PRODUCT_STORE"
+	FacetCustomersSales     Facet = "CUSTOMERS_SALES"
+	FacetCommunications     Facet = "COMMUNICATIONS"
+	FacetPaymentsFinance    Facet = "PAYMENTS_FINANCE"
+	FacetGrantFunding       Facet = "GRANT_FUNDING"
+	FacetPatentIP           Facet = "PATENT_IP"
+	FacetMAPartnerships     Facet = "MA_PARTNERSHIPS"
+	FacetDocsProjection     Facet = "DOCS_PROJECTION"
+	FacetAnalyticsForecast Facet = "ANALYTICS_FORECAST"
+)
+
+type BuildNode struct {
+	ID     string `json:"i"`
+	System string `json:"s"`
+	State  string `json:"t,omitempty"`
+}
+
+type BuildEdge struct {
+	From string `json:"f"`
+	To   string `json:"t"`
+	Kind string `json:"k,omitempty"`
+}
+
+type Monetization struct {
+	Model       string `json:"m,omitempty"`
+	Customer    string `json:"c,omitempty"`
+	Value       string `json:"v,omitempty"`
+	RevenuePath string `json:"r,omitempty"`
+}
+
+type Metadata struct {
+	CapturedAt   time.Time      `json:"t"`
+	AIIntegrated bool           `json:"a"`
+	PromptSchema string         `json:"p,omitempty"`
+	Facets       []Facet        `json:"f,omitempty"`
+	BuildNodes   []BuildNode    `json:"n,omitempty"`
+	BuildEdges   []BuildEdge    `json:"e,omitempty"`
+	Monetization *Monetization `json:"o,omitempty"`
 }
 
 type EmergION struct {

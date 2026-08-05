@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"time"
 
 	"emergion-sovereign-runtime/internal/core"
 	"emergion-sovereign-runtime/internal/reason"
@@ -54,7 +55,24 @@ func (e Engine) Emerge(ctx context.Context, in reason.Input, ev Evidence) (core.
 		REL: result.Relationships,
 		CAP: result.Capabilities,
 		VAL: core.Validation{Facts: result.Facts, Gaps: result.Gaps, Risk: result.Risk, Recoil: true, WVC: true, Reasoner: e.Reasoner.Name(), ReasonerVer: e.Reasoner.Version(ctx)},
-		EVO: core.Evolution{Version: 1},
+		EVO: core.Evolution{Version: 1, Metadata: metadata(result, e.Reasoner.Name() != "heuristic")},
 	}
 	return em, nil
+}
+
+func metadata(result reason.Result, aiIntegrated bool) *core.Metadata {
+	m := &core.Metadata{CapturedAt: time.Now().UTC(), AIIntegrated: aiIntegrated, PromptSchema: "EMERGER_LOGICAL_V2"}
+	for _, facet := range result.Facets {
+		m.Facets = append(m.Facets, core.Facet(facet))
+	}
+	for _, node := range result.BuildNodes {
+		m.BuildNodes = append(m.BuildNodes, core.BuildNode{ID: node.ID, System: node.System, State: node.State})
+	}
+	for _, edge := range result.BuildEdges {
+		m.BuildEdges = append(m.BuildEdges, core.BuildEdge{From: edge.From, To: edge.To, Kind: edge.Kind})
+	}
+	if result.Monetization != nil {
+		m.Monetization = &core.Monetization{Model: result.Monetization.Model, Customer: result.Monetization.Customer, Value: result.Monetization.Value, RevenuePath: result.Monetization.RevenuePath}
+	}
+	return m
 }

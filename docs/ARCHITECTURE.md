@@ -36,6 +36,18 @@ SOURCE
 
 The runtime persists only the completed GOV-ready EmergION. Intermediate stages exist in memory and disappear after validation.
 
+## Dodecahedral metadata projection
+
+Optional metadata is carried inside `EVO`, preserving the canonical
+`<IDN, STA, MEM, REL, CAP, VAL, EVO>` identity and the existing COSL/REG lineage.
+It timestamps capture, records the logical prompt schema and AI integration state,
+and may hold source-supported build-graph and monetization attributes. Capability
+classification is bounded to twelve faces: FIELD Command, Emergence Capture,
+Program Forge, Product/Store, Customers/Sales, Communications, Payments/Finance,
+Grant/Funding, Patent/IP, M&A/Partnerships, Documentation/Projection, and
+Analytics/Forecasting. The Evolution Engine governs those faces; it is not a
+thirteenth face. Metadata remains a GOV candidate until HUMAN_FINAL and REG.
+
 ## Persistence embodiment
 
 The implementation uses:
