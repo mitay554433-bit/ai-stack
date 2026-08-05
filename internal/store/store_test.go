@@ -1,0 +1,32 @@
+package store
+
+import (
+	"emergion-sovereign-runtime/internal/core"
+	"testing"
+)
+
+func TestStore(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev, err := s.Preserve([]byte("abc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	em := core.EmergION{IDN: "E-1", STA: core.StateAtGOV, MEM: core.Memory{SourceHash: ev.Hash, Codec: ev.Codec, Bytes: ev.Bytes, Stored: ev.Stored}, EVO: core.Evolution{Version: 1}}
+	if _, err = s.SaveCandidate(em); err != nil {
+		t.Fatal(err)
+	}
+	events, err := s.Events()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("got %d", len(events))
+	}
+	b, err := s.ReadEvidence(ev.Hash)
+	if err != nil || string(b) != "abc" {
+		t.Fatalf("bad evidence %q %v", b, err)
+	}
+}

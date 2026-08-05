@@ -1,0 +1,180 @@
+{
+  "schema": "EMERGION_SOVEREIGN_RUNTIME_MANIFEST_v1",
+  "generated_at": "2026-08-05T02:29:13.784842+00:00",
+  "architecture": "EmergER -> EmergION -> RECOIL/WVC -> GOV/HUMAN_FINAL -> REG -> FIELD",
+  "emergox": "alias for live FIELD embodiment",
+  "chatgpt_dependency": false,
+  "http_server_required": false,
+  "third_party_go_dependencies": 0,
+  "default_reasoner": "local Gemma via llama-cli",
+  "gemma_auto_discovery": true,
+  "real_gemma_verified_in_this_environment": false,
+  "controlled_gemma_adapter_integration": "PASS",
+  "tests": "PASS",
+  "vet": "PASS",
+  "source_file_count": 29,
+  "source_files": [
+    {
+      "path": ".gitignore",
+      "bytes": 64,
+      "sha256": "167ef67dffebfe372b2d58012c1885e6a081a4a0298ee7dd9936cb838ed3b70c"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2891,
+      "sha256": "b721eace571caa1a8d30d11f8fcae1c1417dfce56c24cae5940b28fce3e2d78d"
+    },
+    {
+      "path": "cmd/field/main.go",
+      "bytes": 6621,
+      "sha256": "fa6eb7240fee9dbdede76830b66685fa20fa8fe745b7102120341264a0a533e0"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "bytes": 2678,
+      "sha256": "646fcd168c8a8fef4500a6e001713966d097e07ebd13c12cf6982a3c1cba51e6"
+    },
+    {
+      "path": "docs/SYSTEM_STATUS.md",
+      "bytes": 990,
+      "sha256": "f5ac520ae012161e577226c2329163b07eda04917a829ce17d1e502dfd66f852"
+    },
+    {
+      "path": "go.mod",
+      "bytes": 43,
+      "sha256": "b7d46443466f66b4020f26b09a932d3176adef6e0a11cf7e97649aa8063eaefc"
+    },
+    {
+      "path": "internal/adapters/catalog.go",
+      "bytes": 1043,
+      "sha256": "2bd12e061ec5f302eaa5cce3504bf9664e663fc9181b662d8b8a6e008ecb4a2b"
+    },
+    {
+      "path": "internal/analytics/analytics.go",
+      "bytes": 890,
+      "sha256": "03b4cb595882c33857d74d12d4fb83c88f30cae0e481905ad6ca201e6456fd19"
+    },
+    {
+      "path": "internal/axiom/axiom.go",
+      "bytes": 549,
+      "sha256": "d03c2776d197a6f0320b53a063003cd9e41295bc53d695d6c471aa3269e13eb3"
+    },
+    {
+      "path": "internal/core/types.go",
+      "bytes": 2318,
+      "sha256": "4bb9679467ac1aa052d018b2f9f068dfba3f8a7e0b2fcaaff6181a83f6b3b777"
+    },
+    {
+      "path": "internal/cosl/cosl.go",
+      "bytes": 1195,
+      "sha256": "6ae21878f3a77476821f731dc1391d692e14f2896fa453c9287fe8ec224a5c46"
+    },
+    {
+      "path": "internal/cosl/cosl_test.go",
+      "bytes": 491,
+      "sha256": "fe45e97bfdb3241aa49fa3895d93527edd3caa558636b166736e2c987a231dc1"
+    },
+    {
+      "path": "internal/doctor/doctor.go",
+      "bytes": 1659,
+      "sha256": "f4aeeffc293c6fe794d62b39a96f16ca6d0b33c4600356e3aa5079f1032ea650"
+    },
+    {
+      "path": "internal/emerger/engine.go",
+      "bytes": 1586,
+      "sha256": "a9224fdae0f64755e1bf1ec81ade4d9f39bf6295e1dde364c8f0e74a36b3ad38"
+    },
+    {
+      "path": "internal/emerger/engine_test.go",
+      "bytes": 482,
+      "sha256": "5b5a884d30aedcc66e74c0e188b54f00015c5bdc3e3ee32bcb4e168397f26949"
+    },
+    {
+      "path": "internal/field/rebuild.go",
+      "bytes": 1650,
+      "sha256": "aec843ab56aae8c8885d6d7f8d098009ee235275d2eac9718fdd980ac1e35778"
+    },
+    {
+      "path": "internal/field/rebuild_test.go",
+      "bytes": 630,
+      "sha256": "ed4db42f1d4a39006e50dd213d4c738923ea77ab73537e2c34dd94b94dc51ccd"
+    },
+    {
+      "path": "internal/gov/gov.go",
+      "bytes": 1031,
+      "sha256": "c2176679f6ff5da4c9443598070fef560eb2f6e5194c890d0dafe13589a1d65d"
+    },
+    {
+      "path": "internal/proj/proj.go",
+      "bytes": 2166,
+      "sha256": "3aa9b902bb19c79262871dc789298a8981b54a74f39d1028be1e4e35d5725fd0"
+    },
+    {
+      "path": "internal/reason/gemma_cli.go",
+      "bytes": 6916,
+      "sha256": "b00d48397b06dc380e63d5cbda791652d9a3e4eb53b96d6cffd81023afb64d7e"
+    },
+    {
+      "path": "internal/reason/gemma_cli_test.go",
+      "bytes": 336,
+      "sha256": "2377dd0036ea8669a9b47e22d3952e1b8750b47f0c50eba9c1e870ee060bd4cf"
+    },
+    {
+      "path": "internal/reason/heuristic.go",
+      "bytes": 761,
+      "sha256": "065f29fa65a08123662922353c7f3a703714e3be65ee6735276b4fce18c8a989"
+    },
+    {
+      "path": "internal/reason/reason.go",
+      "bytes": 541,
+      "sha256": "dbb829ad3a5f80a02ce4f0d57def61726dcbecf1fb28a50656eec0838244a29f"
+    },
+    {
+      "path": "internal/reg/reg.go",
+      "bytes": 411,
+      "sha256": "4eaefd3c565aeeeb9a7672e690c1c37a0a9ec3d399efe12b8371999b28c9c334"
+    },
+    {
+      "path": "internal/runtime/runtime.go",
+      "bytes": 3586,
+      "sha256": "486aaf67797e4ed157d22ca1c27e3cd2ae3b31b21aea7d2d833a9da86ccd038d"
+    },
+    {
+      "path": "internal/runtime/runtime_test.go",
+      "bytes": 662,
+      "sha256": "085b853597b78c19bdbf692509907a633c38593d54938490e13d2543ad509ff5"
+    },
+    {
+      "path": "internal/store/store.go",
+      "bytes": 6516,
+      "sha256": "fbd36f363add11a209afd0d69e4f5b97cd3af396f4bdf4c237233c4338f92cba"
+    },
+    {
+      "path": "internal/store/store_test.go",
+      "bytes": 737,
+      "sha256": "af41086512d8e9146ed3b00ae7daf40c043b718c29a50aec4d5ee83a075f2a55"
+    },
+    {
+      "path": "pkg/fieldapi/api.go",
+      "bytes": 2440,
+      "sha256": "d0dfb016bf43613eba75b452055897ac67137f22ec18ff8066abf660afabc70b"
+    }
+  ],
+  "release_binaries": [
+    {
+      "path": "dist/field-linux-amd64",
+      "bytes": 3842200,
+      "sha256": "6de1b214c6f32bd19f7105fd650e9bd6b9516e44dea336d840e519ff37473d68"
+    },
+    {
+      "path": "dist/field-linux-arm64",
+      "bytes": 3801240,
+      "sha256": "d2221a37f86ec7597ae558dcf0b6041e4126e50c62a4277161b81aa098dfe3ac"
+    },
+    {
+      "path": "dist/field-windows-amd64.exe",
+      "bytes": 4025344,
+      "sha256": "af09f69d21527a5e0bba228fc3d8140326ee589bd8714966b506534878ad0567"
+    }
+  ]
+}

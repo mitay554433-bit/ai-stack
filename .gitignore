@@ -1,0 +1,8 @@
+.field/
+dropzone/
+outputs/
+.integration/
+*.log
+.DS_Store
+
+dist/
