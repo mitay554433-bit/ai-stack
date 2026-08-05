@@ -18,6 +18,8 @@
 
 ## Not yet verified here
 
+- The dodecahedral metadata hardening and exact REG-to-approval lineage checks
+  compile and pass tests in a Go 1.23 build environment.
 - Real Gemma inference against the user's actual model.
 - The model path and `llama-cli` path on the user's device.
 - Native Android operation without Termux.

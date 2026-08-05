@@ -7,6 +7,7 @@ import (
 
 func Rebuild(events []core.Event) (core.State, error) {
 	st := core.EmptyState()
+	decisionEvents := map[string]string{}
 	for _, ev := range events {
 		st.Events++
 		st.TipHash = ev.SelfHash
@@ -32,6 +33,7 @@ func Rebuild(events []core.Event) (core.State, error) {
 			case "APPROVE":
 				em.STA = core.StateApproved
 				st.Approved[em.IDN] = em
+				decisionEvents[em.IDN] = ev.ID
 			case "HOLD":
 				em.STA = core.StateHeld
 				st.Held[em.IDN] = em
@@ -52,7 +54,11 @@ func Rebuild(events []core.Event) (core.State, error) {
 			if !ok {
 				return st, fmt.Errorf("REG target not approved: %s", ev.REG.EmergIONID)
 			}
+			if ev.REG.DecisionID == "" || ev.REG.DecisionID != decisionEvents[em.IDN] {
+				return st, fmt.Errorf("REG receipt does not reference approving decision for %s", em.IDN)
+			}
 			delete(st.Approved, em.IDN)
+			delete(decisionEvents, em.IDN)
 			em.STA = core.StateAccepted
 			st.Accepted[em.IDN] = em
 		default:

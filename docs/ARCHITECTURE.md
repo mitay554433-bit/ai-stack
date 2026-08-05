@@ -47,6 +47,9 @@ Program Forge, Product/Store, Customers/Sales, Communications, Payments/Finance,
 Grant/Funding, Patent/IP, M&A/Partnerships, Documentation/Projection, and
 Analytics/Forecasting. The Evolution Engine governs those faces; it is not a
 thirteenth face. Metadata remains a GOV candidate until HUMAN_FINAL and REG.
+Before persistence, the runtime bounds and validates facets, graph nodes, graph
+edges and monetization text. REG reconstruction also verifies that every
+acceptance receipt names the exact HUMAN_FINAL approval event.
 
 ## Persistence embodiment
 

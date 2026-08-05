@@ -1,6 +1,10 @@
 package core
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 const (
 	StateAtGOV    = "G"
@@ -83,6 +87,44 @@ type Metadata struct {
 	BuildNodes   []BuildNode    `json:"n,omitempty"`
 	BuildEdges   []BuildEdge    `json:"e,omitempty"`
 	Monetization *Monetization `json:"o,omitempty"`
+}
+
+func (m *Metadata) Validate() error {
+	if m == nil {
+		return nil
+	}
+	if m.CapturedAt.IsZero() {
+		return fmt.Errorf("metadata capture timestamp required")
+	}
+	allowed := map[Facet]bool{
+		FacetFIELDCommand: true, FacetEmergenceCapture: true, FacetProgramForge: true,
+		FacetProductStore: true, FacetCustomersSales: true, FacetCommunications: true,
+		FacetPaymentsFinance: true, FacetGrantFunding: true, FacetPatentIP: true,
+		FacetMAPartnerships: true, FacetDocsProjection: true, FacetAnalyticsForecast: true,
+	}
+	seenFacets := map[Facet]bool{}
+	for _, facet := range m.Facets {
+		if !allowed[facet] || seenFacets[facet] {
+			return fmt.Errorf("invalid or duplicate facet %q", facet)
+		}
+		seenFacets[facet] = true
+	}
+	if len(m.BuildNodes) > 24 || len(m.BuildEdges) > 48 {
+		return fmt.Errorf("build graph exceeds bounds")
+	}
+	nodes := map[string]bool{}
+	for _, node := range m.BuildNodes {
+		if strings.TrimSpace(node.ID) == "" || strings.TrimSpace(node.System) == "" || nodes[node.ID] {
+			return fmt.Errorf("invalid or duplicate build node %q", node.ID)
+		}
+		nodes[node.ID] = true
+	}
+	for _, edge := range m.BuildEdges {
+		if !nodes[edge.From] || !nodes[edge.To] {
+			return fmt.Errorf("build edge references unknown node %q -> %q", edge.From, edge.To)
+		}
+	}
+	return nil
 }
 
 type EmergION struct {

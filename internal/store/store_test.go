@@ -3,6 +3,7 @@ package store
 import (
 	"emergion-sovereign-runtime/internal/core"
 	"testing"
+	"time"
 )
 
 func TestStore(t *testing.T) {
@@ -14,7 +15,7 @@ func TestStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	em := core.EmergION{IDN: "E-1", STA: core.StateAtGOV, MEM: core.Memory{SourceHash: ev.Hash, Codec: ev.Codec, Bytes: ev.Bytes, Stored: ev.Stored}, EVO: core.Evolution{Version: 1}}
+	em := core.EmergION{IDN: "E-1", STA: core.StateAtGOV, MEM: core.Memory{SourceHash: ev.Hash, Codec: ev.Codec, Bytes: ev.Bytes, Stored: ev.Stored}, VAL: core.Validation{Recoil: true, WVC: true}, EVO: core.Evolution{Version: 1}}
 	if _, err = s.SaveCandidate(em); err != nil {
 		t.Fatal(err)
 	}
@@ -28,5 +29,23 @@ func TestStore(t *testing.T) {
 	b, err := s.ReadEvidence(ev.Hash)
 	if err != nil || string(b) != "abc" {
 		t.Fatalf("bad evidence %q %v", b, err)
+	}
+}
+
+func TestSaveCandidateRejectsInvalidMetadata(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	em := core.EmergION{
+		IDN: "E-1", STA: core.StateAtGOV,
+		VAL: core.Validation{Recoil: true, WVC: true},
+		EVO: core.Evolution{Version: 1, Metadata: &core.Metadata{
+			CapturedAt: time.Now().UTC(),
+			BuildEdges: []core.BuildEdge{{From: "missing", To: "also-missing"}},
+		}},
+	}
+	if _, err = s.SaveCandidate(em); err == nil {
+		t.Fatal("expected invalid metadata to fail")
 	}
 }

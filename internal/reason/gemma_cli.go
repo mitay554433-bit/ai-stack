@@ -231,13 +231,60 @@ func normalize(r Result) Result {
 	r.Facts = clean(r.Facts, 24)
 	r.Gaps = clean(r.Gaps, 24)
 	r.Facets = cleanFacets(r.Facets)
-	if len(r.BuildNodes) > 24 {
-		r.BuildNodes = r.BuildNodes[:24]
-	}
-	if len(r.BuildEdges) > 48 {
-		r.BuildEdges = r.BuildEdges[:48]
+	r.BuildNodes, r.BuildEdges = cleanBuildGraph(r.BuildNodes, r.BuildEdges)
+	if r.Monetization != nil {
+		r.Monetization.Model = cleanText(r.Monetization.Model, 160)
+		r.Monetization.Customer = cleanText(r.Monetization.Customer, 160)
+		r.Monetization.Value = cleanText(r.Monetization.Value, 240)
+		r.Monetization.RevenuePath = cleanText(r.Monetization.RevenuePath, 240)
+		if r.Monetization.Model == "" && r.Monetization.Customer == "" && r.Monetization.Value == "" && r.Monetization.RevenuePath == "" {
+			r.Monetization = nil
+		}
 	}
 	return r
+}
+
+func cleanBuildGraph(nodes []BuildNode, edges []BuildEdge) ([]BuildNode, []BuildEdge) {
+	cleanNodes := make([]BuildNode, 0, 24)
+	known := map[string]bool{}
+	for _, node := range nodes {
+		node.ID = cleanText(node.ID, 80)
+		node.System = cleanText(node.System, 160)
+		node.State = cleanText(node.State, 80)
+		if node.ID == "" || node.System == "" || known[node.ID] {
+			continue
+		}
+		known[node.ID] = true
+		cleanNodes = append(cleanNodes, node)
+		if len(cleanNodes) == 24 {
+			break
+		}
+	}
+	cleanEdges := make([]BuildEdge, 0, 48)
+	seen := map[string]bool{}
+	for _, edge := range edges {
+		edge.From = cleanText(edge.From, 80)
+		edge.To = cleanText(edge.To, 80)
+		edge.Kind = cleanText(edge.Kind, 80)
+		key := edge.From + "\x00" + edge.To + "\x00" + edge.Kind
+		if !known[edge.From] || !known[edge.To] || seen[key] {
+			continue
+		}
+		seen[key] = true
+		cleanEdges = append(cleanEdges, edge)
+		if len(cleanEdges) == 48 {
+			break
+		}
+	}
+	return cleanNodes, cleanEdges
+}
+
+func cleanText(value string, max int) string {
+	value = strings.TrimSpace(value)
+	if len(value) > max {
+		value = value[:max]
+	}
+	return value
 }
 
 func cleanFacets(in []string) []string {

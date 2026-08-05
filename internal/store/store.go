@@ -195,6 +195,12 @@ func (s *Store) append(kind, subject string, em *core.EmergION, d *core.Decision
 }
 
 func (s *Store) SaveCandidate(em core.EmergION) (string, error) {
+	if em.STA != core.StateAtGOV || !em.VAL.Recoil || !em.VAL.WVC || em.EVO.Version < 1 {
+		return "", fmt.Errorf("candidate is not GOV-ready")
+	}
+	if err := em.EVO.Metadata.Validate(); err != nil {
+		return "", fmt.Errorf("candidate metadata invalid: %w", err)
+	}
 	if existing, ok, err := s.FindBySourceHash(em.MEM.SourceHash); err != nil {
 		return "", err
 	} else if ok {

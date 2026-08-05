@@ -18,3 +18,13 @@ func TestCleanFacets(t *testing.T) {
 		t.Fatalf("bad facets: %#v", got)
 	}
 }
+
+func TestCleanBuildGraph(t *testing.T) {
+	nodes, edges := cleanBuildGraph(
+		[]BuildNode{{ID: " source ", System: " SOURCE "}, {ID: "source", System: "duplicate"}, {ID: "target", System: "REG"}},
+		[]BuildEdge{{From: "source", To: "target", Kind: "builds"}, {From: "missing", To: "target", Kind: "invalid"}},
+	)
+	if len(nodes) != 2 || len(edges) != 1 || nodes[0].ID != "source" {
+		t.Fatalf("bad graph: %#v %#v", nodes, edges)
+	}
+}
