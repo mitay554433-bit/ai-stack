@@ -61,7 +61,12 @@ func (e Engine) Emerge(ctx context.Context, in reason.Input, ev Evidence) (core.
 }
 
 func metadata(result reason.Result, aiIntegrated bool) *core.Metadata {
-	m := &core.Metadata{CapturedAt: time.Now().UTC(), AIIntegrated: aiIntegrated, PromptSchema: "EMERGER_LOGICAL_V2"}
+	m := &core.Metadata{
+		Topology:     core.TopologyDodecahedronV1,
+		CapturedAt:   time.Now().UTC(),
+		AIIntegrated: aiIntegrated,
+		PromptSchema: "EMERGER_LOGICAL_V2",
+	}
 	for _, facet := range result.Facets {
 		m.Facets = append(m.Facets, core.Facet(facet))
 	}

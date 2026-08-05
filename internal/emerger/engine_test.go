@@ -2,6 +2,7 @@ package emerger
 
 import (
 	"context"
+	"emergion-sovereign-runtime/internal/core"
 	"emergion-sovereign-runtime/internal/reason"
 	"testing"
 )
@@ -18,5 +19,8 @@ func TestEmerge(t *testing.T) {
 	}
 	if em.EVO.Metadata == nil || em.EVO.Metadata.CapturedAt.IsZero() || em.EVO.Metadata.AIIntegrated {
 		t.Fatalf("bad metadata: %#v", em.EVO.Metadata)
+	}
+	if em.EVO.Metadata.Topology != core.TopologyDodecahedronV1 {
+		t.Fatalf("bad topology: %q", em.EVO.Metadata.Topology)
 	}
 }

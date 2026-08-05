@@ -79,7 +79,12 @@ type Monetization struct {
 	RevenuePath string `json:"r,omitempty"`
 }
 
+type Topology string
+
+const TopologyDodecahedronV1 Topology = "DODECAHEDRON_V1"
+
 type Metadata struct {
+	Topology     Topology      `json:"y,omitempty"`
 	CapturedAt   time.Time     `json:"t"`
 	AIIntegrated bool          `json:"a"`
 	PromptSchema string        `json:"p,omitempty"`
