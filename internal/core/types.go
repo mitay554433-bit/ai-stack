@@ -46,17 +46,17 @@ type Evolution struct {
 type Facet string
 
 const (
-	FacetFIELDCommand       Facet = "FIELD_COMMAND"
-	FacetEmergenceCapture   Facet = "EMERGENCE_CAPTURE"
-	FacetProgramForge       Facet = "PROGRAM_FORGE"
-	FacetProductStore       Facet = "PRODUCT_STORE"
-	FacetCustomersSales     Facet = "CUSTOMERS_SALES"
-	FacetCommunications     Facet = "COMMUNICATIONS"
-	FacetPaymentsFinance    Facet = "PAYMENTS_FINANCE"
-	FacetGrantFunding       Facet = "GRANT_FUNDING"
-	FacetPatentIP           Facet = "PATENT_IP"
-	FacetMAPartnerships     Facet = "MA_PARTNERSHIPS"
-	FacetDocsProjection     Facet = "DOCS_PROJECTION"
+	FacetFIELDCommand      Facet = "FIELD_COMMAND"
+	FacetEmergenceCapture  Facet = "EMERGENCE_CAPTURE"
+	FacetProgramForge      Facet = "PROGRAM_FORGE"
+	FacetProductStore      Facet = "PRODUCT_STORE"
+	FacetCustomersSales    Facet = "CUSTOMERS_SALES"
+	FacetCommunications    Facet = "COMMUNICATIONS"
+	FacetPaymentsFinance   Facet = "PAYMENTS_FINANCE"
+	FacetGrantFunding      Facet = "GRANT_FUNDING"
+	FacetPatentIP          Facet = "PATENT_IP"
+	FacetMAPartnerships    Facet = "MA_PARTNERSHIPS"
+	FacetDocsProjection    Facet = "DOCS_PROJECTION"
 	FacetAnalyticsForecast Facet = "ANALYTICS_FORECAST"
 )
 
@@ -80,12 +80,12 @@ type Monetization struct {
 }
 
 type Metadata struct {
-	CapturedAt   time.Time      `json:"t"`
-	AIIntegrated bool           `json:"a"`
-	PromptSchema string         `json:"p,omitempty"`
-	Facets       []Facet        `json:"f,omitempty"`
-	BuildNodes   []BuildNode    `json:"n,omitempty"`
-	BuildEdges   []BuildEdge    `json:"e,omitempty"`
+	CapturedAt   time.Time     `json:"t"`
+	AIIntegrated bool          `json:"a"`
+	PromptSchema string        `json:"p,omitempty"`
+	Facets       []Facet       `json:"f,omitempty"`
+	BuildNodes   []BuildNode   `json:"n,omitempty"`
+	BuildEdges   []BuildEdge   `json:"e,omitempty"`
 	Monetization *Monetization `json:"o,omitempty"`
 }
 
