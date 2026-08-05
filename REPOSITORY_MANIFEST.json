@@ -1,6 +1,6 @@
 {
   "schema": "EMERGION_SOVEREIGN_RUNTIME_MANIFEST_v1",
-  "generated_at": "2026-08-05T02:29:13.784842+00:00",
+  "generated_at": "2026-08-05T17:17:33Z",
   "architecture": "EmergER -> EmergION -> RECOIL/WVC -> GOV/HUMAN_FINAL -> REG -> FIELD",
   "emergox": "alias for live FIELD embodiment",
   "chatgpt_dependency": false,
@@ -61,8 +61,8 @@
     },
     {
       "path": "internal/core/types.go",
-      "bytes": 2318,
-      "sha256": "4bb9679467ac1aa052d018b2f9f068dfba3f8a7e0b2fcaaff6181a83f6b3b777"
+      "bytes": 5210,
+      "sha256": "a832dded68df51e1c61c8b55d84c3a35f6f766e35c0309743be748eff34e6388"
     },
     {
       "path": "internal/cosl/cosl.go",
@@ -163,18 +163,18 @@
   "release_binaries": [
     {
       "path": "dist/field-linux-amd64",
-      "bytes": 3842200,
-      "sha256": "6de1b214c6f32bd19f7105fd650e9bd6b9516e44dea336d840e519ff37473d68"
+      "bytes": 6451427,
+      "sha256": "940a7f7cde108527c6e4d37244a316190419ca4c9f55a9fdc624b3aac5601ee4"
     },
     {
       "path": "dist/field-linux-arm64",
-      "bytes": 3801240,
-      "sha256": "d2221a37f86ec7597ae558dcf0b6041e4126e50c62a4277161b81aa098dfe3ac"
+      "bytes": 6141950,
+      "sha256": "2ba37d4708b6f40fcccb98c96e4b022543e702b2c54f65e2fa989c8e29da1d4b"
     },
     {
       "path": "dist/field-windows-amd64.exe",
-      "bytes": 4025344,
-      "sha256": "af09f69d21527a5e0bba228fc3d8140326ee589bd8714966b506534878ad0567"
+      "bytes": 6625792,
+      "sha256": "2124064c0d3c80e5386f0009266c4dceea68d27b6f5ee2c8f3595a6233afbf17"
     }
   ]
 }
