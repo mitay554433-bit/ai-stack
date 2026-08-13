@@ -7,8 +7,11 @@ import (
 	"emergion-sovereign-runtime/internal/reason"
 	"emergion-sovereign-runtime/internal/reg"
 	"emergion-sovereign-runtime/internal/store"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -223,5 +226,86 @@ func TestCaptureAcceptsREGAcceptedSupersedes(t *testing.T) {
 
 	if em.STA != core.StateAtGOV {
 		t.Fatalf("successor not delivered to GOV: %s", em.STA)
+	}
+}
+
+func TestGovernedStateContextRemainsValidJSON(t *testing.T) {
+	root := t.TempDir()
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 40; i++ {
+		id := fmt.Sprintf("E-PROJECTION-%02d", i)
+		sourceHash := fmt.Sprintf("projection-source-%02d", i)
+
+		em := core.EmergION{
+			IDN: id,
+			STA: core.StateAtGOV,
+			MEM: core.Memory{
+				SourceHash: sourceHash,
+				Bytes:      1,
+				Stored:     1,
+				Summary:    strings.Repeat("projection-summary-", 40),
+			},
+			REL: map[string]string{
+				"relationship": strings.Repeat("accepted-context-", 20),
+			},
+			CAP: []string{"OBS", "CMP"},
+			VAL: core.Validation{
+				Recoil: true,
+				WVC:    true,
+			},
+			EVO: core.Evolution{Version: 1},
+		}
+
+		if _, err := s.SaveCandidate(em); err != nil {
+			t.Fatal(err)
+		}
+
+		approved, decision, err := gov.Decide(
+			em,
+			gov.Approve,
+			"HUMAN_FINAL",
+			"projection test",
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		decisionID, err := s.SaveDecision(decision)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, receipt, err := reg.Accept(approved, decisionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := s.SaveAccepted(receipt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	r := Runtime{Store: s, Reasoner: reason.Heuristic{}}
+
+	projected, err := r.governedStateContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(projected) > 12000 {
+		t.Fatalf("projection exceeded bound: %d", len(projected))
+	}
+
+	var decoded []governedProjection
+	if err := json.Unmarshal([]byte(projected), &decoded); err != nil {
+		t.Fatalf("projection is invalid JSON: %v", err)
+	}
+
+	if len(decoded) == 0 {
+		t.Fatal("bounded projection unexpectedly empty")
 	}
 }

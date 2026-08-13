@@ -57,12 +57,22 @@ func (r Runtime) governedStateContext() (string, error) {
 	if len(items) == 0 {
 		return "", nil
 	}
-	b, err := json.Marshal(items)
+	bounded := make([]governedProjection, 0, len(items))
+	for _, item := range items {
+		candidate := append(bounded, item)
+		b, err := json.Marshal(candidate)
+		if err != nil {
+			return "", err
+		}
+		if len(b) > 12000 {
+			break
+		}
+		bounded = candidate
+	}
+
+	b, err := json.Marshal(bounded)
 	if err != nil {
 		return "", err
-	}
-	if len(b) > 12000 {
-		b = b[:12000]
 	}
 	return string(b), nil
 }
