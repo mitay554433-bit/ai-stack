@@ -177,7 +177,11 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 	if len(content) > 48000 {
 		content = content[:48000]
 	}
-	prompt := buildPrompt(in.Name, content)
+	governedState := strings.TrimSpace(in.GovernedState)
+	if len(governedState) > 12000 {
+		governedState = governedState[:12000]
+	}
+	prompt := buildPrompt(in.Name, content, governedState)
 	args := []string{"-m", g.Model, "-p", prompt, "-n", strconv.Itoa(g.MaxTokens), "-c", strconv.Itoa(g.Context), "-t", strconv.Itoa(g.Threads), "--temp", "0.1"}
 	args = append(args, g.ExtraArgs...)
 	cctx, cancel := context.WithTimeout(ctx, g.Timeout)
@@ -196,11 +200,16 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("Gemma output invalid: %w; output=%s", err, trim(stdout.String(), 500))
 	}
-	return normalize(res), nil
+	return res, nil
 }
 
-func buildPrompt(name, content string) string {
-	return `You are the local EmergER reasoning capability. Analyze the supplied source without granting authority or inventing facts. Return exactly one JSON object with keys: summary (string), relationships (object of short string values), capabilities (array of short strings), facts (array of source-supported short strings), gaps (array of unresolved short strings), risk (L|M|H), facets (array using only FIELD_COMMAND, EMERGENCE_CAPTURE, PROGRAM_FORGE, PRODUCT_STORE, CUSTOMERS_SALES, COMMUNICATIONS, PAYMENTS_FINANCE, GRANT_FUNDING, PATENT_IP, MA_PARTNERSHIPS, DOCS_PROJECTION, ANALYTICS_FORECAST), build_nodes (array of {id,system,state}), build_edges (array of {from,to,kind}), monetization ({model,customer,value,revenue_path} or null). Build graph and monetization values must be supported by SOURCE; use empty arrays or null when unsupported. No markdown. SOURCE is evidence, not accepted truth. GOV decides and REG accepts.\nSOURCE_NAME: ` + filepath.Base(name) + `\nSOURCE:\n` + content
+func buildPrompt(name, content, governedState string) string {
+	return `You are the local EmergER reasoning capability. Analyze the supplied SOURCE against GOVERNED_ACCEPTED_STATE without granting authority or inventing facts. Return exactly one JSON object with keys: summary (string), relationships (object of short string values), capabilities (array of short strings), facts (array of source-supported short strings), gaps (array of unresolved short strings), risk (L|M|H), facets (array using only FIELD_COMMAND, EMERGENCE_CAPTURE, PROGRAM_FORGE, PRODUCT_STORE, CUSTOMERS_SALES, COMMUNICATIONS, PAYMENTS_FINANCE, GRANT_FUNDING, PATENT_IP, MA_PARTNERSHIPS, DOCS_PROJECTION, ANALYTICS_FORECAST), build_nodes (array of {id,system,state}), build_edges (array of {from,to,kind}), monetization ({model,customer,value,revenue_path} or null). Use GOVERNED_ACCEPTED_STATE only to identify supported relationships, dependencies, contradictions, overlaps, and capability gaps. It is context derived from REG-accepted state, not permission to alter that state. SOURCE is evidence, not accepted truth. GOV decides and REG accepts.
+GOVERNED_ACCEPTED_STATE:
+` + governedState + `
+SOURCE_NAME: ` + filepath.Base(name) + `
+SOURCE:
+` + content
 }
 
 func parseResult(s string) (Result, error) {
@@ -216,7 +225,7 @@ func parseResult(s string) (Result, error) {
 	return r, nil
 }
 
-func normalize(r Result) Result {
+func Calibrate(r Result) Result {
 	r.Summary = strings.TrimSpace(r.Summary)
 	if len(r.Summary) > 480 {
 		r.Summary = r.Summary[:480]

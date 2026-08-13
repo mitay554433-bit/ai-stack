@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"emergion-sovereign-runtime/internal/adapters"
 	"emergion-sovereign-runtime/internal/core"
 	"emergion-sovereign-runtime/internal/emerger"
+	livefield "emergion-sovereign-runtime/internal/field"
 	"emergion-sovereign-runtime/internal/reason"
 	"emergion-sovereign-runtime/internal/store"
 )
@@ -18,6 +21,133 @@ import (
 type Runtime struct {
 	Store    *store.Store
 	Reasoner reason.Reasoner
+}
+
+type governedProjection struct {
+	ID            string            `json:"id"`
+	Summary       string            `json:"summary"`
+	Capabilities  []string          `json:"capabilities,omitempty"`
+	Relationships map[string]string `json:"relationships,omitempty"`
+	Topology      core.Topology     `json:"topology,omitempty"`
+}
+
+func (r Runtime) governedStateContext() (string, error) {
+	events, err := r.Store.Events()
+	if err != nil {
+		return "", err
+	}
+	st, err := livefield.Rebuild(events)
+	if err != nil {
+		return "", err
+	}
+	items := make([]governedProjection, 0, len(st.Accepted))
+	for _, em := range st.Accepted {
+		item := governedProjection{
+			ID:            em.IDN,
+			Summary:       em.MEM.Summary,
+			Capabilities:  em.CAP,
+			Relationships: em.REL,
+		}
+		if em.EVO.Metadata != nil {
+			item.Topology = em.EVO.Metadata.Topology
+		}
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+	if len(items) == 0 {
+		return "", nil
+	}
+	b, err := json.Marshal(items)
+	if err != nil {
+		return "", err
+	}
+	if len(b) > 12000 {
+		b = b[:12000]
+	}
+	return string(b), nil
+}
+
+func coverage(em *core.EmergION, governedState string) error {
+	var bridgegaps []string
+
+	if strings.TrimSpace(em.MEM.SourceHash) == "" {
+		bridgegaps = append(bridgegaps, "BRIDGEGAP:source_hash")
+	}
+	if em.MEM.Bytes <= 0 || em.MEM.Stored <= 0 {
+		bridgegaps = append(bridgegaps, "BRIDGEGAP:evidence")
+	}
+
+	if strings.TrimSpace(em.MEM.Summary) == "" {
+		bridgegaps = append(bridgegaps, "BRIDGEGAP:summary")
+	}
+	if len(em.VAL.Facts) == 0 {
+		bridgegaps = append(bridgegaps, "BRIDGEGAP:facts")
+	}
+	if len(em.CAP) == 0 {
+		bridgegaps = append(bridgegaps, "BRIDGEGAP:capabilities")
+	}
+	if len(em.REL) == 0 {
+		bridgegaps = append(bridgegaps, "BRIDGEGAP:relationships")
+	}
+
+	if strings.TrimSpace(governedState) != "" {
+		if em.REL["governed_state"] == "" {
+			bridgegaps = append(bridgegaps, "BRIDGEGAP:living_state_relationship")
+		}
+		projected := false
+		for _, fact := range em.VAL.Facts {
+			if fact == "living_state_projected" {
+				projected = true
+				break
+			}
+		}
+		if !projected {
+			bridgegaps = append(bridgegaps, "BRIDGEGAP:living_state_projection")
+		}
+	}
+
+	if len(bridgegaps) != 0 {
+		em.VAL.Gaps = append(em.VAL.Gaps, bridgegaps...)
+		return fmt.Errorf("COVERAGE failed: %s", strings.Join(bridgegaps, ", "))
+	}
+
+	return nil
+}
+
+func protector(em *core.EmergION) {
+	if em.REL == nil {
+		em.REL = map[string]string{}
+	}
+
+	authority := map[string]bool{}
+	catalog := adapters.Catalog(false)
+
+	for _, capability := range em.CAP {
+		capability = strings.ToUpper(strings.TrimSpace(capability))
+		for _, adapter := range catalog {
+			for _, allowed := range adapter.Capabilities {
+				if capability == allowed {
+					authority[adapter.Authority] = true
+				}
+			}
+		}
+	}
+
+	if len(authority) == 0 {
+		em.REL["protector"] = "NO_EXTERNAL_AUTHORITY_CLAIMED"
+		return
+	}
+
+	classes := make([]string, 0, len(authority))
+	for class := range authority {
+		classes = append(classes, class)
+	}
+	sort.Strings(classes)
+	em.REL["protector"] = strings.Join(classes, ",")
+
+	if authority["SEND_GATED"] || authority["TRANSFER_GATED"] || authority["DEPLOY_GATED"] {
+		em.REL["protector_gate"] = "HUMAN_FINAL_BOUND"
+	}
 }
 
 func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool) (core.EmergION, bool, error) {
@@ -40,10 +170,16 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		}
 		return existing, true, nil
 	}
-	analysis, err := r.Reasoner.Analyze(ctx, reason.Input{Name: filepath.Base(path), Content: b})
+	governedState, err := r.governedStateContext()
+	if err != nil {
+		return core.EmergION{}, false, fmt.Errorf("living state projection failed: %w", err)
+	}
+	analysis, err := r.Reasoner.Analyze(ctx, reason.Input{Name: filepath.Base(path), Content: b, GovernedState: governedState})
 	if err != nil {
 		return core.EmergION{}, false, err
 	}
+	analysis = reason.Calibrate(analysis)
+
 	ev, err := r.Store.Preserve(b)
 	if err != nil {
 		return core.EmergION{}, false, err
@@ -55,6 +191,31 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		_, _ = r.Store.PruneOrphans()
 		return core.EmergION{}, false, err
 	}
+	if err := coverage(&em, governedState); err != nil {
+		_, _ = r.Store.PruneOrphans()
+		return em, false, err
+	}
+
+	protector(&em)
+
+	if strings.TrimSpace(em.MEM.Summary) == "" {
+		_, _ = r.Store.PruneOrphans()
+		return core.EmergION{}, false, fmt.Errorf("RECOIL failed: empty summary")
+	}
+	em.VAL.Recoil = true
+
+	preserved, err := r.Store.ReadEvidence(ev.Hash)
+	if err != nil {
+		_, _ = r.Store.PruneOrphans()
+		return core.EmergION{}, false, fmt.Errorf("WVC failed: %w", err)
+	}
+	if store.Hash(preserved) != em.MEM.SourceHash {
+		_, _ = r.Store.PruneOrphans()
+		return core.EmergION{}, false, fmt.Errorf("WVC failed: source hash mismatch")
+	}
+	em.VAL.WVC = true
+	em.STA = core.StateAtGOV
+
 	if _, err = r.Store.SaveCandidate(em); err != nil {
 		_, _ = r.Store.PruneOrphans()
 		return core.EmergION{}, false, err

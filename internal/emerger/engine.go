@@ -50,11 +50,11 @@ func (e Engine) Emerge(ctx context.Context, in reason.Input, ev Evidence) (core.
 	id := "E-" + strings.ToUpper(ev.Hash[:16])
 	em := core.EmergION{
 		IDN: id,
-		STA: core.StateAtGOV,
+		STA: "",
 		MEM: core.Memory{SourceHash: ev.Hash, Codec: ev.Codec, Bytes: ev.Bytes, Stored: ev.Stored, Summary: result.Summary, Provenance: ev.Provenance},
 		REL: result.Relationships,
 		CAP: result.Capabilities,
-		VAL: core.Validation{Facts: result.Facts, Gaps: result.Gaps, Risk: result.Risk, Recoil: true, WVC: true, Reasoner: e.Reasoner.Name(), ReasonerVer: e.Reasoner.Version(ctx)},
+		VAL: core.Validation{Facts: result.Facts, Gaps: result.Gaps, Risk: result.Risk, Recoil: false, WVC: false, Reasoner: e.Reasoner.Name(), ReasonerVer: e.Reasoner.Version(ctx)},
 		EVO: core.Evolution{Version: 1, Metadata: metadata(result, e.Reasoner.Name() != "heuristic")},
 	}
 	return em, nil

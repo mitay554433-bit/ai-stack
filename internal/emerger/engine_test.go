@@ -14,7 +14,7 @@ func TestEmerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if em.STA != "G" || !em.VAL.Recoil || !em.VAL.WVC {
+	if em.STA != "" || em.VAL.Recoil || em.VAL.WVC {
 		t.Fatalf("bad: %#v", em)
 	}
 	if em.EVO.Metadata == nil || em.EVO.Metadata.CapturedAt.IsZero() || em.EVO.Metadata.AIIntegrated {

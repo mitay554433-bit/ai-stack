@@ -3,8 +3,9 @@ package reason
 import "context"
 
 type Input struct {
-	Name    string
-	Content []byte
+	Name          string
+	Content       []byte
+	GovernedState string
 }
 
 type Result struct {
