@@ -203,6 +203,28 @@ func main() {
 			renderField(s, *output)
 			fmt.Println(em.IDN, receipt.Decision)
 		}
+	case "resume":
+		if len(args) < 2 {
+			fail(fmt.Errorf("resume <held-id> [reason]"))
+		}
+		st := loadState(s)
+		em, ok := st.Held[args[1]]
+		if !ok {
+			fail(fmt.Errorf("EmergION is not held"))
+		}
+		reasonText := ""
+		if len(args) > 2 {
+			reasonText = args[2]
+		}
+		em, receipt, err := gov.ResumeHeld(em, "HUMAN_FINAL", reasonText)
+		if err != nil {
+			fail(err)
+		}
+		if _, err := s.SaveDecision(receipt); err != nil {
+			fail(err)
+		}
+		renderField(s, *output)
+		fmt.Println(em.IDN, "AT_GOV", "RESUMED")
 	case "status":
 		printJSON(analytics.Measure(loadState(s)))
 	case "symbolic":
@@ -269,6 +291,7 @@ Commands:
   once                         process and clear the dropzone once
   run                          run the local living FIELD event loop; no server
   decide <id> <decision> [why] HUMAN_FINAL decision; approval is then REG-accepted
+  resume <held-id> [why]       HUMAN_FINAL resume of a held EmergION back to GOV
   status                       CPU and FIELD metrics
   symbolic <id>                print native symbolic EmergION representation
   render [directory]           static JSON and HTML FIELD projection

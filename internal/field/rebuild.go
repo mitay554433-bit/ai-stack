@@ -24,6 +24,20 @@ func Rebuild(events []core.Event) (core.State, error) {
 			if ev.Decision == nil {
 				return st, fmt.Errorf("decision event missing receipt")
 			}
+
+			if ev.Decision.Decision == "RESUME" {
+				em, ok := st.Held[ev.Decision.EmergIONID]
+				if !ok {
+					return st, fmt.Errorf("resume target not held: %s", ev.Decision.EmergIONID)
+				}
+				if ev.Decision.Authority != "HUMAN_FINAL" {
+					return st, fmt.Errorf("resume requires HUMAN_FINAL")
+				}
+				delete(st.Held, em.IDN)
+				em.STA = core.StateAtGOV
+				st.AtGOV[em.IDN] = em
+				continue
+			}
 			em, ok := st.AtGOV[ev.Decision.EmergIONID]
 			if !ok {
 				return st, fmt.Errorf("decision target not at GOV: %s", ev.Decision.EmergIONID)

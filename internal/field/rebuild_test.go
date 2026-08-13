@@ -27,3 +27,84 @@ func TestRebuildRejectsUnlinkedREGReceipt(t *testing.T) {
 		t.Fatal("expected unlinked REG receipt to fail")
 	}
 }
+
+func TestHeldEmergIONCanResumeToGOV(t *testing.T) {
+	em := core.EmergION{
+		IDN: "E-HOLD-RESUME",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{Version: 1},
+	}
+
+	events := []core.Event{
+		{
+			Type:     "C",
+			ID:       "EV-C",
+			EmergION: &em,
+		},
+		{
+			Type: "D",
+			ID:   "EV-HOLD",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: em.IDN,
+				Decision:   "HOLD",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "D",
+			ID:   "EV-RESUME",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: em.IDN,
+				Decision:   "RESUME",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+	}
+
+	st, err := Rebuild(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := st.Held[em.IDN]; ok {
+		t.Fatal("resumed EmergION remained held")
+	}
+
+	resumed, ok := st.AtGOV[em.IDN]
+	if !ok {
+		t.Fatal("resumed EmergION did not return to GOV")
+	}
+
+	if resumed.STA != core.StateAtGOV {
+		t.Fatalf("resumed state = %s", resumed.STA)
+	}
+}
+
+func TestResumeRejectsNonHeldTarget(t *testing.T) {
+	em := core.EmergION{
+		IDN: "E-NOT-HELD",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{Version: 1},
+	}
+
+	events := []core.Event{
+		{
+			Type:     "C",
+			ID:       "EV-C",
+			EmergION: &em,
+		},
+		{
+			Type: "D",
+			ID:   "EV-RESUME",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: em.IDN,
+				Decision:   "RESUME",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+	}
+
+	if _, err := Rebuild(events); err == nil {
+		t.Fatal("non-held EmergION was resumed")
+	}
+}
