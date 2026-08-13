@@ -166,6 +166,29 @@ func (g GemmaCLI) Validate() error {
 	return nil
 }
 
+func gemmaArgs(g GemmaCLI, prompt string) []string {
+	args := []string{
+		"-m", g.Model,
+		"-p", prompt,
+		"-n", strconv.Itoa(g.MaxTokens),
+		"-c", strconv.Itoa(g.Context),
+		"-t", strconv.Itoa(g.Threads),
+		"--temp", "0.1",
+	}
+
+	args = append(args, g.ExtraArgs...)
+
+	// Execution-boundary invariants. These intentionally come last.
+	args = append(args,
+		"--no-conversation",
+		"--single-turn",
+		"--simple-io",
+		"--no-display-prompt",
+	)
+
+	return args
+}
+
 func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 	if err := g.Validate(); err != nil {
 		return Result{}, err
@@ -182,8 +205,7 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 		governedState = governedState[:12000]
 	}
 	prompt := buildPrompt(in.Name, content, governedState)
-	args := []string{"-m", g.Model, "-p", prompt, "-n", strconv.Itoa(g.MaxTokens), "-c", strconv.Itoa(g.Context), "-t", strconv.Itoa(g.Threads), "--temp", "0.1"}
-	args = append(args, g.ExtraArgs...)
+	args := gemmaArgs(g, prompt)
 	cctx, cancel := context.WithTimeout(ctx, g.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, g.Binary, args...)
