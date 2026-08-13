@@ -14,6 +14,7 @@ import (
 	"emergion-sovereign-runtime/internal/core"
 	"emergion-sovereign-runtime/internal/emerger"
 	livefield "emergion-sovereign-runtime/internal/field"
+	"emergion-sovereign-runtime/internal/pivot"
 	"emergion-sovereign-runtime/internal/reason"
 	"emergion-sovereign-runtime/internal/store"
 )
@@ -373,20 +374,43 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 
 	protector(&em)
 
-	if strings.TrimSpace(em.MEM.Summary) == "" {
+	_, err = pivot.Observe(
+		"RECOIL",
+		"CANDIDATE_CLAIM",
+		"CANDIDATE_OBSERVATION",
+		"SUMMARY_PRESENT",
+		func() error {
+			if strings.TrimSpace(em.MEM.Summary) == "" {
+				return fmt.Errorf("empty summary")
+			}
+			return nil
+		},
+	)
+	if err != nil {
 		_, _ = r.Store.PruneOrphans()
-		return core.EmergION{}, false, fmt.Errorf("RECOIL failed: empty summary")
+		return core.EmergION{}, false, err
 	}
 	em.VAL.Recoil = true
 
-	preserved, err := r.Store.ReadEvidence(ev.Hash)
+	_, err = pivot.Observe(
+		"WVC",
+		"SOURCE_IDENTITY_CLAIM",
+		"PRESERVED_EVIDENCE_OBSERVATION",
+		"SOURCE_HASH_MATCH",
+		func() error {
+			preserved, readErr := r.Store.ReadEvidence(ev.Hash)
+			if readErr != nil {
+				return fmt.Errorf("evidence read failed: %w", readErr)
+			}
+			if store.Hash(preserved) != em.MEM.SourceHash {
+				return fmt.Errorf("source hash mismatch")
+			}
+			return nil
+		},
+	)
 	if err != nil {
 		_, _ = r.Store.PruneOrphans()
-		return core.EmergION{}, false, fmt.Errorf("WVC failed: %w", err)
-	}
-	if store.Hash(preserved) != em.MEM.SourceHash {
-		_, _ = r.Store.PruneOrphans()
-		return core.EmergION{}, false, fmt.Errorf("WVC failed: source hash mismatch")
+		return core.EmergION{}, false, err
 	}
 	em.VAL.WVC = true
 	em.STA = core.StateAtGOV
