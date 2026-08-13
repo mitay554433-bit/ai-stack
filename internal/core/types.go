@@ -228,7 +228,11 @@ func (e EmergION) Symbolic() string {
 	if len(e.VAL.Gaps) > 0 {
 		fmt.Fprintf(&b, "差=%s\n", strings.Join(e.VAL.Gaps, "|"))
 	}
-	fmt.Fprintf(&b, "退印=RETURN_TO:%s\n", e.MEM.SourceHash)
+	if e.EVO.Supersedes != "" {
+		fmt.Fprintf(&b, "退印=SUPERSEDES:%s\n", e.EVO.Supersedes)
+	} else {
+		fmt.Fprintf(&b, "退印=RETURN_TO:%s\n", e.MEM.SourceHash)
+	}
 	b.WriteString("進行/終\n")
 
 	b.WriteString("退行/始\n")

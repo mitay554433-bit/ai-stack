@@ -50,3 +50,32 @@ func TestEmergIONSymbolic(t *testing.T) {
 		t.Fatal("symbolic EmergION is not deterministic")
 	}
 }
+
+func TestEmergIONSymbolicUsesSupersedesForBackwardImprint(t *testing.T) {
+	em := EmergION{
+		IDN: "E-NEW",
+		STA: StateAtGOV,
+		MEM: Memory{
+			SourceHash: "newhash",
+		},
+		VAL: Validation{
+			Recoil: true,
+			WVC:    true,
+		},
+		EVO: Evolution{
+			Version:    1,
+			Supersedes: "E-PRIOR",
+			Delta:      []string{"changed behavior"},
+		},
+	}
+
+	got := em.Symbolic()
+
+	if !strings.Contains(got, "退印=SUPERSEDES:E-PRIOR\n") {
+		t.Fatalf("symbolic EmergION did not use governed predecessor:\n%s", got)
+	}
+
+	if strings.Contains(got, "退印=RETURN_TO:newhash\n") {
+		t.Fatalf("symbolic EmergION used source fallback despite predecessor:\n%s", got)
+	}
+}
