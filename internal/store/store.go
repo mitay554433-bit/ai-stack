@@ -16,6 +16,7 @@ import (
 
 	"emergion-sovereign-runtime/internal/core"
 	"emergion-sovereign-runtime/internal/cosl"
+	"emergion-sovereign-runtime/internal/pivot"
 )
 
 type Store struct{ Root string }
@@ -176,29 +177,38 @@ func (s *Store) append(kind, subject string, em *core.EmergION, d *core.Decision
 	if err != nil {
 		return "", err
 	}
-	// Reciprocal pivot: the representation that is about to become
-	// authoritative must be observable and valid in the reverse direction
-	// before it can cross the append boundary.
-	if strings.ContainsAny(line, "\r\n") {
-		return "", fmt.Errorf(
-			"COSL pivot divergence: event %s encoded across multiple physical lines",
-			e.ID,
-		)
-	}
+	_, err = pivot.Observe(
+		"COSL_APPEND",
+		"ENCODE",
+		"DECODE",
+		"ONE_EVENT_ONE_PHYSICAL_LINE_AND_IDENTITY_STABLE",
+		func() error {
+			if strings.ContainsAny(line, "\r\n") {
+				return fmt.Errorf(
+					"event %s encoded across multiple physical lines",
+					e.ID,
+				)
+			}
 
-	decoded, err := cosl.Decode(line)
+			decoded, decodeErr := cosl.Decode(line)
+			if decodeErr != nil {
+				return fmt.Errorf(
+					"event %s failed reciprocal decode: %w",
+					e.ID,
+					decodeErr,
+				)
+			}
+			if decoded.ID != e.ID || decoded.Type != e.Type {
+				return fmt.Errorf(
+					"event %s changed identity during reciprocal decode",
+					e.ID,
+				)
+			}
+			return nil
+		},
+	)
 	if err != nil {
-		return "", fmt.Errorf(
-			"COSL pivot divergence: event %s failed reciprocal decode: %w",
-			e.ID,
-			err,
-		)
-	}
-	if decoded.ID != e.ID || decoded.Type != e.Type {
-		return "", fmt.Errorf(
-			"COSL pivot divergence: event %s changed identity during reciprocal decode",
-			e.ID,
-		)
+		return "", err
 	}
 	f, err := os.OpenFile(s.logPath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
