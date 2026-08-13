@@ -82,8 +82,23 @@ func Rebuild(events []core.Event) (core.State, error) {
 			if !ok {
 				return st, fmt.Errorf("REG target not approved: %s", ev.REG.EmergIONID)
 			}
-			if ev.REG.DecisionID == "" || ev.REG.DecisionID != decisionEvents[em.IDN] {
-				return st, fmt.Errorf("REG receipt does not reference approving decision for %s", em.IDN)
+			_, err := pivot.Observe(
+				"REG_REPLAY",
+				"REG_RECEIPT",
+				"APPROVING_DECISION_OBSERVATION",
+				"EXACT_APPROVING_DECISION_LINK",
+				func() error {
+					if ev.REG.DecisionID == "" || ev.REG.DecisionID != decisionEvents[em.IDN] {
+						return fmt.Errorf(
+							"REG receipt does not reference approving decision for %s",
+							em.IDN,
+						)
+					}
+					return nil
+				},
+			)
+			if err != nil {
+				return st, err
 			}
 			delete(st.Approved, em.IDN)
 			delete(decisionEvents, em.IDN)
