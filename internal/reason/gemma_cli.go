@@ -180,7 +180,6 @@ func gemmaArgs(g GemmaCLI, prompt string) []string {
 
 	// Execution-boundary invariants. These intentionally come last.
 	args = append(args,
-		"--no-conversation",
 		"--single-turn",
 		"--simple-io",
 		"--no-display-prompt",

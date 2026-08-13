@@ -54,7 +54,6 @@ func TestGemmaArgsEnforceOneShotExecution(t *testing.T) {
 	}
 
 	required := []string{
-		"--no-conversation",
 		"--single-turn",
 		"--simple-io",
 		"--no-display-prompt",
@@ -66,9 +65,9 @@ func TestGemmaArgsEnforceOneShotExecution(t *testing.T) {
 		}
 	}
 
-	if lastIndex("--no-conversation") < lastIndex("--conversation") {
+	if lastIndex("--single-turn") < lastIndex("--conversation") {
 		t.Fatalf(
-			"interactive mode can override one-shot invariant: %#v",
+			"configured conversation mode appears after single-turn invariant: %#v",
 			args,
 		)
 	}
