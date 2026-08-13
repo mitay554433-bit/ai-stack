@@ -305,6 +305,9 @@ func Calibrate(r Result) Result {
 	if strings.EqualFold(r.Supersedes, "null") {
 		r.Supersedes = ""
 	}
+	if strings.EqualFold(r.Supersedes, "null") {
+		r.Supersedes = ""
+	}
 	r.Delta = nil
 	r.Facets = cleanFacets(r.Facets)
 	r.BuildNodes, r.BuildEdges = cleanBuildGraph(r.BuildNodes, r.BuildEdges)

@@ -121,3 +121,18 @@ func TestCalibrateNormalizesNullSupersedes(t *testing.T) {
 		t.Fatalf("null supersedes survived calibration: %q", got.Supersedes)
 	}
 }
+
+func TestCalibrateNormalizesNullSupersedes(t *testing.T) {
+	got := Calibrate(Result{
+		Summary:       "bounded",
+		Relationships: map[string]string{"source": "probe"},
+		Capabilities:  []string{"OBS"},
+		Facts:         []string{"observed"},
+		Risk:          "L",
+		Supersedes:    "null",
+	})
+
+	if got.Supersedes != "" {
+		t.Fatalf("null supersedes survived calibration: %q", got.Supersedes)
+	}
+}
