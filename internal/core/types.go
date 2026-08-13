@@ -189,6 +189,25 @@ func EmptyState() State {
 	}
 }
 
+func symbolicTransition(state string) (string, string) {
+	switch state {
+	case StateAtGOV:
+		return "HUMAN_FINAL_REVIEW", "HUMAN_FINAL_REVIEW"
+	case StateApproved:
+		return "REG_ACCEPTANCE", "REG_ACCEPTANCE"
+	case StateAccepted:
+		return "REPEAT_ON_NEW_SOURCE", "WAIT_FOR_NEW_SOURCE"
+	case StateHeld:
+		return "HUMAN_FINAL_REVIEW", "HUMAN_FINAL_REVIEW"
+	case StateRejected:
+		return "NONE", "NONE"
+	case StateReturned:
+		return "RETURN_TO_SOURCE", "RETURN_TO_SOURCE"
+	default:
+		return "UNRESOLVED_TRANSITION", "UNRESOLVED_TRANSITION"
+	}
+}
+
 func (e EmergION) Symbolic() string {
 	var b strings.Builder
 
@@ -214,7 +233,8 @@ func (e EmergION) Symbolic() string {
 
 	b.WriteString("退行/始\n")
 	fmt.Fprintf(&b, "動=RETURN_TO:%s\n", e.MEM.SourceHash)
-	b.WriteString("進印=REPEAT_ON_NEW_SOURCE\n")
+	forward, next := symbolicTransition(e.STA)
+	fmt.Fprintf(&b, "進印=%s\n", forward)
 	b.WriteString("退行/終\n")
 
 	b.WriteString("検証/始\n")
@@ -227,6 +247,7 @@ func (e EmergION) Symbolic() string {
 	}
 	b.WriteString("検証/終\n")
 
+	fmt.Fprintf(&b, "次=%s\n", next)
 	b.WriteString("終/萌現\n")
 	return b.String()
 }
