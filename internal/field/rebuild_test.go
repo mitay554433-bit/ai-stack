@@ -225,3 +225,101 @@ func TestDecisionReplayRequiresHumanFinal(t *testing.T) {
 		t.Fatal("non-HUMAN_FINAL decision replay was accepted")
 	}
 }
+
+func TestExactHumanFinalREGReplayProducesAcceptedState(t *testing.T) {
+	em := core.EmergION{
+		IDN: "E-SCZ-EXACT",
+		STA: core.StateAtGOV,
+		MEM: core.Memory{
+			SourceHash: "source",
+			Bytes:      1,
+			Stored:     1,
+			Summary:    "governed accepted structure",
+		},
+		EVO: core.Evolution{Version: 1},
+	}
+
+	events := []core.Event{
+		{
+			Type:     "C",
+			ID:       "EV-C",
+			EmergION: &em,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-APPROVE",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: em.IDN,
+				Decision:   "APPROVE",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "R",
+			ID:   "EV-R",
+			REG: &core.REGReceipt{
+				EmergIONID: em.IDN,
+				DecisionID: "EV-D-APPROVE",
+			},
+		},
+	}
+
+	st, err := Rebuild(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	accepted, ok := st.Accepted[em.IDN]
+	if !ok {
+		t.Fatal("exact HUMAN_FINAL + REG replay did not enter Accepted")
+	}
+
+	if accepted.STA != core.StateAccepted {
+		t.Fatalf(
+			"accepted state = %q want %q",
+			accepted.STA,
+			core.StateAccepted,
+		)
+	}
+
+	if _, ok := st.Approved[em.IDN]; ok {
+		t.Fatal("REG-accepted EmergION remained in Approved")
+	}
+}
+
+func TestREGReplayRejectsWrongApprovingDecisionLink(t *testing.T) {
+	em := core.EmergION{
+		IDN: "E-SCZ-BAD-LINK",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{Version: 1},
+	}
+
+	events := []core.Event{
+		{
+			Type:     "C",
+			ID:       "EV-C",
+			EmergION: &em,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-APPROVE",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: em.IDN,
+				Decision:   "APPROVE",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "R",
+			ID:   "EV-R",
+			REG: &core.REGReceipt{
+				EmergIONID: em.IDN,
+				DecisionID: "EV-D-WRONG",
+			},
+		},
+	}
+
+	if _, err := Rebuild(events); err == nil {
+		t.Fatal("REG replay accepted wrong approving decision link")
+	}
+}
