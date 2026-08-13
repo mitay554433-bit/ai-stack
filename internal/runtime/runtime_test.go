@@ -45,7 +45,9 @@ func TestProtectorHumanFinalGate(t *testing.T) {
 		REL: map[string]string{},
 	}
 
-	protector(&em)
+	if err := protector(&em); err != nil {
+		t.Fatal(err)
+	}
 
 	if em.REL["protector_gate"] != "HUMAN_FINAL_BOUND" {
 		t.Fatalf("protector did not preserve HUMAN_FINAL boundary: %#v", em.REL)
@@ -1121,5 +1123,70 @@ func TestOnceContinuesAfterCoverageRecapture(t *testing.T) {
 
 	if !normal.VAL.Recoil || !normal.VAL.WVC {
 		t.Fatal("normal second candidate not verified")
+	}
+}
+
+func TestProtectorOwnsAndRebuildsAuthorityEnvelope(t *testing.T) {
+	em := core.EmergION{
+		CAP: []string{"OBS"},
+		REL: map[string]string{
+			"source_name":    "candidate.txt",
+			"protector":      "SEND_GATED",
+			"protector_gate": "HUMAN_FINAL_BOUND",
+		},
+	}
+
+	if err := protector(&em); err != nil {
+		t.Fatal(err)
+	}
+
+	if em.REL["protector"] != "NO_EXTERNAL_AUTHORITY_CLAIMED" {
+		t.Fatalf(
+			"untrusted protector claim survived: %#v",
+			em.REL,
+		)
+	}
+
+	if _, ok := em.REL["protector_gate"]; ok {
+		t.Fatalf(
+			"stale protector gate survived: %#v",
+			em.REL,
+		)
+	}
+
+	if em.REL["source_name"] != "candidate.txt" {
+		t.Fatal("PROTECTOR modified unrelated relationship")
+	}
+}
+
+func TestProtectorReciprocalAuthorityEnvelope(t *testing.T) {
+	em := core.EmergION{
+		CAP: []string{
+			"SEND",
+			"TRANSFER",
+			"DEPLOY",
+			"PATENT",
+		},
+		REL: map[string]string{},
+	}
+
+	if err := protector(&em); err != nil {
+		t.Fatal(err)
+	}
+
+	want := "DEPLOY_GATED,EVIDENCE_ONLY,SEND_GATED,TRANSFER_GATED"
+	if em.REL["protector"] != want {
+		t.Fatalf(
+			"protector envelope = %q want %q",
+			em.REL["protector"],
+			want,
+		)
+	}
+
+	if em.REL["protector_gate"] != "HUMAN_FINAL_BOUND" {
+		t.Fatalf(
+			"protector gate = %q",
+			em.REL["protector_gate"],
+		)
 	}
 }

@@ -144,10 +144,50 @@ func coverage(em *core.EmergION, governedState string) error {
 	return nil
 }
 
-func protector(em *core.EmergION) {
+func expectedProtectorEnvelope(capabilities []string) (string, string) {
+	authority := map[string]bool{}
+	catalog := adapters.Catalog(false)
+
+	for _, capability := range capabilities {
+		capability = strings.ToUpper(strings.TrimSpace(capability))
+		for _, adapter := range catalog {
+			for _, allowed := range adapter.Capabilities {
+				if capability == allowed {
+					authority[adapter.Authority] = true
+				}
+			}
+		}
+	}
+
+	if len(authority) == 0 {
+		return "NO_EXTERNAL_AUTHORITY_CLAIMED", ""
+	}
+
+	classes := make([]string, 0, len(authority))
+	for class := range authority {
+		classes = append(classes, class)
+	}
+	sort.Strings(classes)
+
+	gate := ""
+	if authority["SEND_GATED"] ||
+		authority["TRANSFER_GATED"] ||
+		authority["DEPLOY_GATED"] {
+		gate = "HUMAN_FINAL_BOUND"
+	}
+
+	return strings.Join(classes, ","), gate
+}
+
+func protector(em *core.EmergION) error {
 	if em.REL == nil {
 		em.REL = map[string]string{}
 	}
+
+	// PROTECTOR owns these runtime-derived relationships. Source/model
+	// supplied values cannot survive into the authority envelope.
+	delete(em.REL, "protector")
+	delete(em.REL, "protector_gate")
 
 	authority := map[string]bool{}
 	catalog := adapters.Catalog(false)
@@ -165,19 +205,49 @@ func protector(em *core.EmergION) {
 
 	if len(authority) == 0 {
 		em.REL["protector"] = "NO_EXTERNAL_AUTHORITY_CLAIMED"
-		return
+	} else {
+		classes := make([]string, 0, len(authority))
+		for class := range authority {
+			classes = append(classes, class)
+		}
+		sort.Strings(classes)
+		em.REL["protector"] = strings.Join(classes, ",")
+
+		if authority["SEND_GATED"] ||
+			authority["TRANSFER_GATED"] ||
+			authority["DEPLOY_GATED"] {
+			em.REL["protector_gate"] = "HUMAN_FINAL_BOUND"
+		}
 	}
 
-	classes := make([]string, 0, len(authority))
-	for class := range authority {
-		classes = append(classes, class)
-	}
-	sort.Strings(classes)
-	em.REL["protector"] = strings.Join(classes, ",")
+	_, err := pivot.Observe(
+		"PROTECTOR",
+		"CAPABILITY_AUTHORITY_CLAIM",
+		"ADAPTER_AUTHORITY_OBSERVATION",
+		"AUTHORITY_ENVELOPE_MATCH",
+		func() error {
+			expected, expectedGate := expectedProtectorEnvelope(em.CAP)
 
-	if authority["SEND_GATED"] || authority["TRANSFER_GATED"] || authority["DEPLOY_GATED"] {
-		em.REL["protector_gate"] = "HUMAN_FINAL_BOUND"
-	}
+			if em.REL["protector"] != expected {
+				return fmt.Errorf(
+					"protector envelope mismatch: got %q want %q",
+					em.REL["protector"],
+					expected,
+				)
+			}
+
+			if em.REL["protector_gate"] != expectedGate {
+				return fmt.Errorf(
+					"protector gate mismatch: got %q want %q",
+					em.REL["protector_gate"],
+					expectedGate,
+				)
+			}
+
+			return nil
+		},
+	)
+	return err
 }
 
 func stringSet(values []string) map[string]bool {
@@ -383,7 +453,10 @@ func (r Runtime) recapture(
 		)
 	}
 
-	protector(&em)
+	if err := protector(&em); err != nil {
+		_, _ = r.Store.PruneOrphans()
+		return em, false, err
+	}
 
 	_, err = pivot.Observe(
 		"RECOIL",
@@ -510,7 +583,10 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		return em, false, coverageErr
 	}
 
-	protector(&em)
+	if err := protector(&em); err != nil {
+		_, _ = r.Store.PruneOrphans()
+		return r.recapture(ctx, governedState, err)
+	}
 
 	_, err = pivot.Observe(
 		"RECOIL",
