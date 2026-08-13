@@ -188,3 +188,45 @@ func EmptyState() State {
 		Returned: map[string]EmergION{},
 	}
 }
+
+func (e EmergION) Symbolic() string {
+	var b strings.Builder
+
+	b.WriteString("萌現/1\n")
+	fmt.Fprintf(&b, "識=%s\n", e.IDN)
+
+	b.WriteString("中界/始\n")
+	fmt.Fprintf(&b, "中心=%s\n", e.MEM.SourceHash)
+	b.WriteString("法=FORWARD_CREATES_BACKWARD_IMPRINT;BACKWARD_CREATES_FORWARD_IMPRINT\n")
+	b.WriteString("中界/終\n")
+
+	b.WriteString("進行/始\n")
+	fmt.Fprintf(&b, "状態=%s\n", e.STA)
+	if e.MEM.Provenance != "" {
+		fmt.Fprintf(&b, "源=%s\n", e.MEM.Provenance)
+	}
+	fmt.Fprintf(&b, "源根=%s\n", e.MEM.SourceHash)
+	if len(e.VAL.Gaps) > 0 {
+		fmt.Fprintf(&b, "差=%s\n", strings.Join(e.VAL.Gaps, "|"))
+	}
+	fmt.Fprintf(&b, "退印=RETURN_TO:%s\n", e.MEM.SourceHash)
+	b.WriteString("進行/終\n")
+
+	b.WriteString("退行/始\n")
+	fmt.Fprintf(&b, "動=RETURN_TO:%s\n", e.MEM.SourceHash)
+	b.WriteString("進印=REPEAT_ON_NEW_SOURCE\n")
+	b.WriteString("退行/終\n")
+
+	b.WriteString("検証/始\n")
+	fmt.Fprintf(&b, "RECOIL=%t\n", e.VAL.Recoil)
+	fmt.Fprintf(&b, "WVC=%t\n", e.VAL.WVC)
+	if e.VAL.Recoil && e.VAL.WVC {
+		b.WriteString("結果=PASS\n")
+	} else {
+		b.WriteString("結果=CANDIDATE\n")
+	}
+	b.WriteString("検証/終\n")
+
+	b.WriteString("終/萌現\n")
+	return b.String()
+}
