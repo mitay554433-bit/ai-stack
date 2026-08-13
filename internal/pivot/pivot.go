@@ -38,6 +38,16 @@ func (e *DivergenceError) Error() string {
 	)
 }
 
+func (r Result) Evidence() string {
+	return strings.Join([]string{
+		"name=" + r.Name,
+		"forward=" + r.Forward,
+		"reciprocal=" + r.Reciprocal,
+		"invariant=" + r.Invariant,
+		"divergence=" + r.Divergence,
+	}, "\n")
+}
+
 func bridgegapName(name string) string {
 	name = strings.ToUpper(strings.TrimSpace(name))
 
@@ -64,13 +74,7 @@ func bridgegapName(name string) string {
 }
 
 func divergenceEmergION(result Result) core.EmergION {
-	evidence := strings.Join([]string{
-		"name=" + result.Name,
-		"forward=" + result.Forward,
-		"reciprocal=" + result.Reciprocal,
-		"invariant=" + result.Invariant,
-		"divergence=" + result.Divergence,
-	}, "\n")
+	evidence := result.Evidence()
 
 	sum := sha256.Sum256([]byte(evidence))
 	sourceHash := hex.EncodeToString(sum[:])

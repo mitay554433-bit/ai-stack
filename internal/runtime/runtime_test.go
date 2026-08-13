@@ -5,6 +5,7 @@ import (
 	"emergion-sovereign-runtime/internal/core"
 	livefield "emergion-sovereign-runtime/internal/field"
 	"emergion-sovereign-runtime/internal/gov"
+	"emergion-sovereign-runtime/internal/pivot"
 	"emergion-sovereign-runtime/internal/reason"
 	"emergion-sovereign-runtime/internal/reg"
 	"emergion-sovereign-runtime/internal/store"
@@ -731,5 +732,85 @@ func TestDeriveDeltaIgnoresRuntimeProtectorRelationships(t *testing.T) {
 
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("delta mismatch\nwant: %#v\ngot:  %#v", want, got)
+	}
+}
+
+func TestPivotDivergenceReentersNormalAdmission(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store:    s,
+		Reasoner: lineageReasoner{},
+	}
+
+	_, cause := pivot.Observe(
+		"WVC",
+		"SOURCE_IDENTITY_CLAIM",
+		"PRESERVED_EVIDENCE_OBSERVATION",
+		"SOURCE_HASH_MATCH",
+		func() error {
+			return fmt.Errorf("source hash mismatch")
+		},
+	)
+	if cause == nil {
+		t.Fatal("expected pivot divergence")
+	}
+
+	em, duplicate, err := r.admitPivotDivergence(
+		context.Background(),
+		"",
+		cause,
+	)
+	if err == nil {
+		t.Fatal("divergence handoff must preserve original failure")
+	}
+
+	if duplicate {
+		t.Fatal("divergence unexpectedly reported duplicate")
+	}
+
+	if em.STA != core.StateAtGOV {
+		t.Fatalf("divergence state = %q want %q", em.STA, core.StateAtGOV)
+	}
+
+	if !em.VAL.Recoil {
+		t.Fatal("divergence did not pass RECOIL during normal admission")
+	}
+
+	if !em.VAL.WVC {
+		t.Fatal("divergence did not pass WVC during normal admission")
+	}
+
+	if len(em.VAL.Gaps) != 1 ||
+		em.VAL.Gaps[0] != "BRIDGEGAP:PIVOT_WVC" {
+		t.Fatalf("unexpected divergence gaps: %#v", em.VAL.Gaps)
+	}
+
+	events, err := s.Events()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := livefield.Rebuild(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	admitted, ok := state.AtGOV[em.IDN]
+	if !ok {
+		t.Fatal("divergence was not handed to HUMAN_FINAL review")
+	}
+
+	if admitted.IDN != em.IDN {
+		t.Fatalf("admitted divergence = %q", admitted.IDN)
+	}
+
+	if _, ok := state.Accepted[em.IDN]; ok {
+		t.Fatal("divergence self-authorized into REG")
 	}
 }

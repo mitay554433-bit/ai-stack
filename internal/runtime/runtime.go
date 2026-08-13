@@ -323,6 +323,103 @@ func (r Runtime) validateLineage(analysis *reason.Result) error {
 	return nil
 }
 
+func (r Runtime) admitPivotDivergence(
+	ctx context.Context,
+	governedState string,
+	cause error,
+) (core.EmergION, bool, error) {
+	divergence, ok := cause.(*pivot.DivergenceError)
+	if !ok {
+		return core.EmergION{}, false, cause
+	}
+
+	evidenceBytes := []byte(divergence.Result.Evidence())
+	evidence, err := r.Store.Preserve(evidenceBytes)
+	if err != nil {
+		return core.EmergION{}, false, fmt.Errorf(
+			"pivot divergence could not preserve evidence: %w",
+			err,
+		)
+	}
+
+	em := divergence.EmergION
+	em.MEM.SourceHash = evidence.Hash
+	em.MEM.Codec = evidence.Codec
+	em.MEM.Bytes = evidence.Bytes
+	em.MEM.Stored = evidence.Stored
+	em.MEM.Provenance = "reciprocal_pivot"
+
+	if em.REL == nil {
+		em.REL = map[string]string{}
+	}
+	if strings.TrimSpace(governedState) != "" {
+		em.REL["governed_state"] = "accepted_context_present"
+		em.VAL.Facts = append(em.VAL.Facts, "living_state_projected")
+	}
+
+	if err := coverage(&em, governedState); err != nil {
+		_, _ = r.Store.PruneOrphans()
+		return em, false, fmt.Errorf(
+			"pivot divergence admission coverage failed: %w",
+			err,
+		)
+	}
+
+	protector(&em)
+
+	_, err = pivot.Observe(
+		"RECOIL",
+		"PIVOT_DIVERGENCE_CLAIM",
+		"DIVERGENCE_EVIDENCE_OBSERVATION",
+		"SUMMARY_PRESENT",
+		func() error {
+			if strings.TrimSpace(em.MEM.Summary) == "" {
+				return fmt.Errorf("empty divergence summary")
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		_, _ = r.Store.PruneOrphans()
+		return em, false, err
+	}
+	em.VAL.Recoil = true
+
+	_, err = pivot.Observe(
+		"WVC",
+		"PIVOT_DIVERGENCE_IDENTITY",
+		"PRESERVED_DIVERGENCE_EVIDENCE",
+		"SOURCE_HASH_MATCH",
+		func() error {
+			preserved, readErr := r.Store.ReadEvidence(evidence.Hash)
+			if readErr != nil {
+				return fmt.Errorf("evidence read failed: %w", readErr)
+			}
+			if store.Hash(preserved) != em.MEM.SourceHash {
+				return fmt.Errorf("source hash mismatch")
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		_, _ = r.Store.PruneOrphans()
+		return em, false, err
+	}
+	em.VAL.WVC = true
+	em.STA = core.StateAtGOV
+
+	if _, err := r.Store.SaveCandidate(em); err != nil {
+		_, _ = r.Store.PruneOrphans()
+		return em, false, err
+	}
+
+	return em, false, fmt.Errorf(
+		"%w; divergence emerged as %s AT_GOV",
+		cause,
+		em.IDN,
+	)
+}
+
 func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool) (core.EmergION, bool, error) {
 	if r.Store == nil || r.Reasoner == nil {
 		return core.EmergION{}, false, fmt.Errorf("runtime not configured")
@@ -387,8 +484,7 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		},
 	)
 	if err != nil {
-		_, _ = r.Store.PruneOrphans()
-		return core.EmergION{}, false, err
+		return r.admitPivotDivergence(ctx, governedState, err)
 	}
 	em.VAL.Recoil = true
 
@@ -409,8 +505,7 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		},
 	)
 	if err != nil {
-		_, _ = r.Store.PruneOrphans()
-		return core.EmergION{}, false, err
+		return r.admitPivotDivergence(ctx, governedState, err)
 	}
 	em.VAL.WVC = true
 	em.STA = core.StateAtGOV
