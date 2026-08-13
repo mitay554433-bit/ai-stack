@@ -183,3 +183,55 @@ func TestTamperedNativeCOSLRejected(t *testing.T) {
 		t.Fatal("tampered COSL record was accepted")
 	}
 }
+
+func TestMultilineStringsCrossCOSLPivotLineSafe(t *testing.T) {
+	want := fullEvent()
+	want.EmergION.MEM.Summary = "line one\nline two\r\n終\\path"
+	want.EmergION.MEM.Provenance = `path\with\slashes`
+
+	line, err := Encode(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.ContainsAny(line, "\r\n") {
+		t.Fatalf("COSL event crossed physical-line boundary: %q", line)
+	}
+
+	if !strings.Contains(line, "S=B") {
+		t.Fatal("multiline summary did not use line-safe COSL representation")
+	}
+
+	got, err := Decode(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sealedWant, err := Seal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(got, sealedWant) {
+		t.Fatalf(
+			"multiline roundtrip mismatch\nwant: %#v\ngot:  %#v",
+			sealedWant,
+			got,
+		)
+	}
+}
+
+func TestPlainCOSLStringRepresentationRemainsCompatible(t *testing.T) {
+	line, err := Encode(fullEvent())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(line, "S=21:bounded EmergION test") {
+		t.Fatalf("ordinary COSL string representation changed: %q", line)
+	}
+
+	if strings.Contains(line, "S=B") {
+		t.Fatal("ordinary string unnecessarily entered line-safe representation")
+	}
+}

@@ -176,6 +176,30 @@ func (s *Store) append(kind, subject string, em *core.EmergION, d *core.Decision
 	if err != nil {
 		return "", err
 	}
+	// Reciprocal pivot: the representation that is about to become
+	// authoritative must be observable and valid in the reverse direction
+	// before it can cross the append boundary.
+	if strings.ContainsAny(line, "\r\n") {
+		return "", fmt.Errorf(
+			"COSL pivot divergence: event %s encoded across multiple physical lines",
+			e.ID,
+		)
+	}
+
+	decoded, err := cosl.Decode(line)
+	if err != nil {
+		return "", fmt.Errorf(
+			"COSL pivot divergence: event %s failed reciprocal decode: %w",
+			e.ID,
+			err,
+		)
+	}
+	if decoded.ID != e.ID || decoded.Type != e.Type {
+		return "", fmt.Errorf(
+			"COSL pivot divergence: event %s changed identity during reciprocal decode",
+			e.ID,
+		)
+	}
 	f, err := os.OpenFile(s.logPath(), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return "", err

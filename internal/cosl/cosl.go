@@ -37,6 +37,16 @@ func legacySeal(e core.Event) (core.Event, error) {
 }
 
 func writeString(b *strings.Builder, value string) {
+	// Preserve the original COSL representation for ordinary strings so
+	// existing ledger hashes remain stable. Strings containing physical
+	// line breaks cross the reciprocal codec pivot through a line-safe form.
+	if strings.ContainsAny(value, "\r\n") {
+		encoded := base64.RawStdEncoding.EncodeToString([]byte(value))
+		fmt.Fprintf(b, "B%d:", len(encoded))
+		b.WriteString(encoded)
+		return
+	}
+
 	fmt.Fprintf(b, "%d:", len(value))
 	b.WriteString(value)
 }
@@ -336,6 +346,12 @@ func (p *parser) take(value string) error {
 }
 
 func (p *parser) stringValue() (string, error) {
+	encoded := false
+	if p.i < len(p.s) && p.s[p.i] == 'B' {
+		encoded = true
+		p.i++
+	}
+
 	start := p.i
 	for p.i < len(p.s) && p.s[p.i] >= '0' && p.s[p.i] <= '9' {
 		p.i++
@@ -356,7 +372,16 @@ func (p *parser) stringValue() (string, error) {
 
 	value := p.s[p.i : p.i+n]
 	p.i += n
-	return value, nil
+
+	if !encoded {
+		return value, nil
+	}
+
+	decoded, err := base64.RawStdEncoding.DecodeString(value)
+	if err != nil {
+		return "", fmt.Errorf("invalid line-safe string: %w", err)
+	}
+	return string(decoded), nil
 }
 
 func (p *parser) boolValue() (bool, error) {
