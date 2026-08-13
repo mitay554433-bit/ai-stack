@@ -15,6 +15,8 @@ type Result struct {
 	Facts         []string          `json:"facts"`
 	Gaps          []string          `json:"gaps"`
 	Risk          string            `json:"risk"`
+	Supersedes    string            `json:"supersedes"`
+	Delta         []string          `json:"delta"`
 	Facets        []string          `json:"facets"`
 	BuildNodes    []BuildNode       `json:"build_nodes"`
 	BuildEdges    []BuildEdge       `json:"build_edges"`

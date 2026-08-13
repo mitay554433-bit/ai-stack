@@ -55,7 +55,12 @@ func (e Engine) Emerge(ctx context.Context, in reason.Input, ev Evidence) (core.
 		REL: result.Relationships,
 		CAP: result.Capabilities,
 		VAL: core.Validation{Facts: result.Facts, Gaps: result.Gaps, Risk: result.Risk, Recoil: false, WVC: false, Reasoner: e.Reasoner.Name(), ReasonerVer: e.Reasoner.Version(ctx)},
-		EVO: core.Evolution{Version: 1, Metadata: metadata(result, e.Reasoner.Name() != "heuristic")},
+		EVO: core.Evolution{
+			Version:    1,
+			Supersedes: result.Supersedes,
+			Delta:      result.Delta,
+			Metadata:   metadata(result, e.Reasoner.Name() != "heuristic"),
+		},
 	}
 	return em, nil
 }

@@ -150,6 +150,29 @@ func protector(em *core.EmergION) {
 	}
 }
 
+func (r Runtime) validateLineage(analysis *reason.Result) error {
+	if strings.TrimSpace(analysis.Supersedes) == "" {
+		analysis.Supersedes = ""
+		analysis.Delta = nil
+		return nil
+	}
+
+	events, err := r.Store.Events()
+	if err != nil {
+		return err
+	}
+	st, err := livefield.Rebuild(events)
+	if err != nil {
+		return err
+	}
+
+	if _, ok := st.Accepted[analysis.Supersedes]; !ok {
+		return fmt.Errorf("lineage rejected: supersedes %q is not REG-accepted", analysis.Supersedes)
+	}
+
+	return nil
+}
+
 func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool) (core.EmergION, bool, error) {
 	if r.Store == nil || r.Reasoner == nil {
 		return core.EmergION{}, false, fmt.Errorf("runtime not configured")
@@ -179,6 +202,9 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		return core.EmergION{}, false, err
 	}
 	analysis = reason.Calibrate(analysis)
+	if err := r.validateLineage(&analysis); err != nil {
+		return core.EmergION{}, false, err
+	}
 
 	ev, err := r.Store.Preserve(b)
 	if err != nil {
