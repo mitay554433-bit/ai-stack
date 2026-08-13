@@ -619,6 +619,15 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		_, _ = r.Store.PruneOrphans()
 		return core.EmergION{}, false, err
 	}
+
+	if em.REL == nil {
+		em.REL = map[string]string{}
+	}
+	if strings.TrimSpace(governedState) != "" {
+		em.REL["governed_state"] = "accepted_context_present"
+		em.VAL.Facts = append(em.VAL.Facts, "living_state_projected")
+	}
+
 	if coverageErr := coverage(&em, governedState); coverageErr != nil {
 		_, pivotErr := pivot.Observe(
 			"COVERAGE",
