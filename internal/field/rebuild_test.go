@@ -108,3 +108,91 @@ func TestResumeRejectsNonHeldTarget(t *testing.T) {
 		t.Fatal("non-held EmergION was resumed")
 	}
 }
+
+func TestRejectedEmergIONRemainsTerminal(t *testing.T) {
+	em := core.EmergION{
+		IDN: "E-REJECTED",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{Version: 1},
+	}
+
+	events := []core.Event{
+		{
+			Type:     "C",
+			ID:       "EV-C",
+			EmergION: &em,
+		},
+		{
+			Type: "D",
+			ID:   "EV-REJECT",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: em.IDN,
+				Decision:   "REJECT",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+	}
+
+	st, err := Rebuild(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := st.Rejected[em.IDN]; !ok {
+		t.Fatal("rejected EmergION missing from rejected state")
+	}
+
+	if _, ok := st.AtGOV[em.IDN]; ok {
+		t.Fatal("rejected EmergION remained at GOV")
+	}
+
+	if _, ok := st.Held[em.IDN]; ok {
+		t.Fatal("rejected EmergION entered held state")
+	}
+
+	if _, ok := st.Returned[em.IDN]; ok {
+		t.Fatal("rejected EmergION entered returned state")
+	}
+
+	if _, ok := st.Accepted[em.IDN]; ok {
+		t.Fatal("rejected EmergION entered accepted state")
+	}
+}
+
+func TestRejectedEmergIONCannotResume(t *testing.T) {
+	em := core.EmergION{
+		IDN: "E-REJECTED",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{Version: 1},
+	}
+
+	events := []core.Event{
+		{
+			Type:     "C",
+			ID:       "EV-C",
+			EmergION: &em,
+		},
+		{
+			Type: "D",
+			ID:   "EV-REJECT",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: em.IDN,
+				Decision:   "REJECT",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "D",
+			ID:   "EV-RESUME",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: em.IDN,
+				Decision:   "RESUME",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+	}
+
+	if _, err := Rebuild(events); err == nil {
+		t.Fatal("rejected EmergION was resumed")
+	}
+}
