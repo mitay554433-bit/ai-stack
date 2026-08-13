@@ -172,6 +172,10 @@ func stringSet(values []string) map[string]bool {
 	return out
 }
 
+func runtimeDerivedRelationship(key string) bool {
+	return key == "protector" || key == "protector_gate"
+}
+
 func deriveDelta(previous core.EmergION, analysis reason.Result) []string {
 	var delta []string
 
@@ -214,10 +218,16 @@ func deriveDelta(previous core.EmergION, analysis reason.Result) []string {
 	var relationshipKeys []string
 	seenRelationships := map[string]bool{}
 	for key := range previousRelationships {
+		if runtimeDerivedRelationship(key) {
+			continue
+		}
 		seenRelationships[key] = true
 		relationshipKeys = append(relationshipKeys, key)
 	}
 	for key := range currentRelationships {
+		if runtimeDerivedRelationship(key) {
+			continue
+		}
 		if !seenRelationships[key] {
 			relationshipKeys = append(relationshipKeys, key)
 		}

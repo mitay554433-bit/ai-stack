@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -701,4 +702,34 @@ func mustEvents(t *testing.T, s *store.Store) []core.Event {
 		t.Fatal(err)
 	}
 	return events
+}
+
+func TestDeriveDeltaIgnoresRuntimeProtectorRelationships(t *testing.T) {
+	previous := core.EmergION{
+		MEM: core.Memory{
+			Summary: "same summary",
+		},
+		REL: map[string]string{
+			"source_name":    "before.txt",
+			"protector":      "NO_EXTERNAL_AUTHORITY_CLAIMED",
+			"protector_gate": "HUMAN_FINAL_BOUND",
+		},
+	}
+
+	analysis := reason.Result{
+		Summary: "same summary",
+		Relationships: map[string]string{
+			"source_name": "after.txt",
+		},
+	}
+
+	got := deriveDelta(previous, analysis)
+
+	want := []string{
+		"REL_CHANGED:source_name",
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("delta mismatch\nwant: %#v\ngot:  %#v", want, got)
+	}
 }
