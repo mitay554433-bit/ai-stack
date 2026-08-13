@@ -51,6 +51,23 @@ func loadState(s *store.Store) core.State {
 	}
 	return st
 }
+func findEmergION(st core.State, id string) (core.EmergION, bool) {
+	groups := []map[string]core.EmergION{
+		st.AtGOV,
+		st.Approved,
+		st.Accepted,
+		st.Held,
+		st.Rejected,
+		st.Returned,
+	}
+	for _, group := range groups {
+		if em, ok := group[id]; ok {
+			return em, true
+		}
+	}
+	return core.EmergION{}, false
+}
+
 func renderField(s *store.Store, out string) {
 	if _, err := proj.EnsureOutput(out); err != nil {
 		fail(err)
@@ -169,6 +186,15 @@ func main() {
 		}
 	case "status":
 		printJSON(analytics.Measure(loadState(s)))
+	case "symbolic":
+		if len(args) < 2 {
+			fail(fmt.Errorf("symbolic requires an EmergION id"))
+		}
+		em, ok := findEmergION(loadState(s), args[1])
+		if !ok {
+			fail(fmt.Errorf("EmergION %q not found", args[1]))
+		}
+		fmt.Print(em.Symbolic())
 	case "render":
 		out := *output
 		if len(args) > 1 {
@@ -224,6 +250,7 @@ Commands:
   run                          run the local living FIELD event loop; no server
   decide <id> <decision> [why] HUMAN_FINAL decision; approval is then REG-accepted
   status                       CPU and FIELD metrics
+  symbolic <id>                print native symbolic EmergION representation
   render [directory]           static JSON and HTML FIELD projection
   verify                       verify chain/evidence and remove orphan objects
   adapters                     show bounded capability adapters
