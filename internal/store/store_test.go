@@ -49,3 +49,46 @@ func TestSaveCandidateRejectsInvalidMetadata(t *testing.T) {
 		t.Fatal("expected invalid metadata to fail")
 	}
 }
+
+func TestInspectEvidenceReportsPreservedObject(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := []byte("inspect this preserved evidence")
+
+	preserved, err := s.Preserve(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	observed, err := s.InspectEvidence(preserved.Hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if observed.Hash != preserved.Hash {
+		t.Fatalf("hash = %q want %q", observed.Hash, preserved.Hash)
+	}
+
+	if observed.Bytes != int64(len(content)) {
+		t.Fatalf(
+			"bytes = %d want %d",
+			observed.Bytes,
+			len(content),
+		)
+	}
+
+	if observed.Stored != preserved.Stored {
+		t.Fatalf(
+			"stored = %d want %d",
+			observed.Stored,
+			preserved.Stored,
+		)
+	}
+
+	if observed.Codec != "gzip" {
+		t.Fatalf("codec = %q", observed.Codec)
+	}
+}

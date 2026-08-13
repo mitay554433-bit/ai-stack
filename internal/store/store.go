@@ -89,6 +89,25 @@ func (s *Store) Preserve(content []byte) (Evidence, error) {
 	return Evidence{Hash: h, Bytes: int64(len(content)), Stored: st.Size(), Codec: "gzip"}, nil
 }
 
+func (s *Store) InspectEvidence(hash string) (Evidence, error) {
+	b, err := s.ReadEvidence(hash)
+	if err != nil {
+		return Evidence{}, err
+	}
+
+	st, err := os.Stat(s.objectPath(hash))
+	if err != nil {
+		return Evidence{}, err
+	}
+
+	return Evidence{
+		Hash:   hash,
+		Bytes:  int64(len(b)),
+		Stored: st.Size(),
+		Codec:  "gzip",
+	}, nil
+}
+
 func (s *Store) ReadEvidence(hash string) ([]byte, error) {
 	f, err := os.Open(s.objectPath(hash))
 	if err != nil {

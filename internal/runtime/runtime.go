@@ -261,6 +261,47 @@ func stringSet(values []string) map[string]bool {
 	return out
 }
 
+func wvcEvidenceContinuity(s *store.Store, em core.EmergION) error {
+	observed, err := s.InspectEvidence(em.MEM.SourceHash)
+	if err != nil {
+		return fmt.Errorf("evidence observation failed: %w", err)
+	}
+
+	if observed.Hash != em.MEM.SourceHash {
+		return fmt.Errorf(
+			"source hash mismatch: candidate %q evidence %q",
+			em.MEM.SourceHash,
+			observed.Hash,
+		)
+	}
+
+	if observed.Bytes != em.MEM.Bytes {
+		return fmt.Errorf(
+			"evidence byte count mismatch: candidate %d evidence %d",
+			em.MEM.Bytes,
+			observed.Bytes,
+		)
+	}
+
+	if observed.Stored != em.MEM.Stored {
+		return fmt.Errorf(
+			"stored evidence size mismatch: candidate %d evidence %d",
+			em.MEM.Stored,
+			observed.Stored,
+		)
+	}
+
+	if observed.Codec != em.MEM.Codec {
+		return fmt.Errorf(
+			"evidence codec mismatch: candidate %q evidence %q",
+			em.MEM.Codec,
+			observed.Codec,
+		)
+	}
+
+	return nil
+}
+
 func recoilIntegrity(em core.EmergION) error {
 	if strings.TrimSpace(em.MEM.SourceHash) == "" {
 		return fmt.Errorf("source identity missing")
@@ -500,18 +541,11 @@ func (r Runtime) recapture(
 
 	_, err = pivot.Observe(
 		"WVC",
-		"PIVOT_DIVERGENCE_IDENTITY",
+		"RECAPTURE_EVIDENCE_CLAIM",
 		"PRESERVED_DIVERGENCE_EVIDENCE",
-		"SOURCE_HASH_MATCH",
+		"EVIDENCE_CONTINUITY",
 		func() error {
-			preserved, readErr := r.Store.ReadEvidence(evidence.Hash)
-			if readErr != nil {
-				return fmt.Errorf("evidence read failed: %w", readErr)
-			}
-			if store.Hash(preserved) != em.MEM.SourceHash {
-				return fmt.Errorf("source hash mismatch")
-			}
-			return nil
+			return wvcEvidenceContinuity(r.Store, em)
 		},
 	)
 	if err != nil {
@@ -626,18 +660,11 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 
 	_, err = pivot.Observe(
 		"WVC",
-		"SOURCE_IDENTITY_CLAIM",
+		"CANDIDATE_EVIDENCE_CLAIM",
 		"PRESERVED_EVIDENCE_OBSERVATION",
-		"SOURCE_HASH_MATCH",
+		"EVIDENCE_CONTINUITY",
 		func() error {
-			preserved, readErr := r.Store.ReadEvidence(ev.Hash)
-			if readErr != nil {
-				return fmt.Errorf("evidence read failed: %w", readErr)
-			}
-			if store.Hash(preserved) != em.MEM.SourceHash {
-				return fmt.Errorf("source hash mismatch")
-			}
-			return nil
+			return wvcEvidenceContinuity(r.Store, em)
 		},
 	)
 	if err != nil {

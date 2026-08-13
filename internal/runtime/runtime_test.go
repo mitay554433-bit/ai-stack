@@ -1280,3 +1280,87 @@ func TestRecoilIntegrityAllowsRecaptureBridgegap(t *testing.T) {
 		)
 	}
 }
+
+func TestWVCEvidenceContinuityAcceptsExactEvidence(t *testing.T) {
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := []byte("exact WVC evidence")
+
+	ev, err := s.Preserve(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	em := core.EmergION{
+		MEM: core.Memory{
+			SourceHash: ev.Hash,
+			Bytes:      ev.Bytes,
+			Stored:     ev.Stored,
+			Codec:      ev.Codec,
+		},
+	}
+
+	if err := wvcEvidenceContinuity(s, em); err != nil {
+		t.Fatalf("exact evidence continuity failed: %v", err)
+	}
+}
+
+func TestWVCEvidenceContinuityRejectsMetadataMismatch(t *testing.T) {
+	s, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := []byte("WVC mismatch evidence")
+
+	ev, err := s.Preserve(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*core.EmergION)
+	}{
+		{
+			name: "bytes",
+			mutate: func(em *core.EmergION) {
+				em.MEM.Bytes++
+			},
+		},
+		{
+			name: "stored",
+			mutate: func(em *core.EmergION) {
+				em.MEM.Stored++
+			},
+		},
+		{
+			name: "codec",
+			mutate: func(em *core.EmergION) {
+				em.MEM.Codec = "raw"
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			em := core.EmergION{
+				MEM: core.Memory{
+					SourceHash: ev.Hash,
+					Bytes:      ev.Bytes,
+					Stored:     ev.Stored,
+					Codec:      ev.Codec,
+				},
+			}
+
+			tc.mutate(&em)
+
+			if err := wvcEvidenceContinuity(s, em); err == nil {
+				t.Fatal("expected WVC continuity rejection")
+			}
+		})
+	}
+}
