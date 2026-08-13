@@ -323,7 +323,7 @@ func (r Runtime) validateLineage(analysis *reason.Result) error {
 	return nil
 }
 
-func (r Runtime) admitPivotDivergence(
+func (r Runtime) recapture(
 	ctx context.Context,
 	governedState string,
 	cause error,
@@ -414,7 +414,7 @@ func (r Runtime) admitPivotDivergence(
 	}
 
 	return em, false, fmt.Errorf(
-		"%w; divergence emerged as %s AT_GOV",
+		"%w; RECAPTURE emerged as %s AT_GOV",
 		cause,
 		em.IDN,
 	)
@@ -484,7 +484,7 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		},
 	)
 	if err != nil {
-		return r.admitPivotDivergence(ctx, governedState, err)
+		return r.recapture(ctx, governedState, err)
 	}
 	em.VAL.Recoil = true
 
@@ -505,7 +505,7 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		},
 	)
 	if err != nil {
-		return r.admitPivotDivergence(ctx, governedState, err)
+		return r.recapture(ctx, governedState, err)
 	}
 	em.VAL.WVC = true
 	em.STA = core.StateAtGOV

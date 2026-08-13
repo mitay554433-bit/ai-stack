@@ -761,13 +761,13 @@ func TestPivotDivergenceReentersNormalAdmission(t *testing.T) {
 		t.Fatal("expected pivot divergence")
 	}
 
-	em, duplicate, err := r.admitPivotDivergence(
+	em, duplicate, err := r.recapture(
 		context.Background(),
 		"",
 		cause,
 	)
 	if err == nil {
-		t.Fatal("divergence handoff must preserve original failure")
+		t.Fatal("RECAPTURE must preserve original failure")
 	}
 
 	if duplicate {
