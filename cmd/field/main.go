@@ -133,6 +133,25 @@ func main() {
 		} else {
 			fmt.Println(em.IDN, "AT_GOV")
 		}
+	case "rework":
+		if len(args) < 3 {
+			fail(fmt.Errorf("rework <returned-id> <file>"))
+		}
+		rt := fieldruntime.Runtime{
+			Store:               s,
+			Reasoner:            mkReasoner(),
+			ReturnedPredecessor: args[1],
+		}
+		em, duplicate, err := rt.Capture(context.Background(), args[2], false)
+		if err != nil {
+			fail(err)
+		}
+		renderField(s, *output)
+		if duplicate {
+			fmt.Println(em.IDN, "AT_GOV", "DUPLICATE_SOURCE")
+		} else {
+			fmt.Println(em.IDN, "AT_GOV", "REWORK_OF", args[1])
+		}
 	case "once":
 		rt := fieldruntime.Runtime{Store: s, Reasoner: mkReasoner()}
 		ids, err := rt.Once(context.Background(), *dropzone)
@@ -246,6 +265,7 @@ Commands:
   init                         initialize local state and dropzone
   doctor                       verify state, COSL chain, evidence, Gemma runtime and model
   capture <file>               analyze with local Gemma and create one GOV-ready EmergION
+  rework <returned-id> <file>   re-enter a HUMAN_FINAL RETURNED EmergION with corrected source
   once                         process and clear the dropzone once
   run                          run the local living FIELD event loop; no server
   decide <id> <decision> [why] HUMAN_FINAL decision; approval is then REG-accepted

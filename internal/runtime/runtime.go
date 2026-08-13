@@ -19,8 +19,9 @@ import (
 )
 
 type Runtime struct {
-	Store    *store.Store
-	Reasoner reason.Reasoner
+	Store               *store.Store
+	Reasoner            reason.Reasoner
+	ReturnedPredecessor string
 }
 
 type governedProjection struct {
@@ -274,11 +275,7 @@ func deriveDelta(previous core.EmergION, analysis reason.Result) []string {
 }
 
 func (r Runtime) validateLineage(analysis *reason.Result) error {
-	if strings.TrimSpace(analysis.Supersedes) == "" {
-		analysis.Supersedes = ""
-		analysis.Delta = nil
-		return nil
-	}
+	returnedID := strings.TrimSpace(r.ReturnedPredecessor)
 
 	events, err := r.Store.Events()
 	if err != nil {
@@ -289,12 +286,29 @@ func (r Runtime) validateLineage(analysis *reason.Result) error {
 		return err
 	}
 
-	if previous, ok := st.Accepted[analysis.Supersedes]; !ok {
-		return fmt.Errorf("lineage rejected: supersedes %q is not REG-accepted", analysis.Supersedes)
-	} else {
+	if returnedID != "" {
+		previous, ok := st.Returned[returnedID]
+		if !ok {
+			return fmt.Errorf("rework rejected: predecessor %q is not HUMAN_FINAL RETURNED", returnedID)
+		}
+
+		analysis.Supersedes = returnedID
 		analysis.Delta = deriveDelta(previous, *analysis)
+		return nil
 	}
 
+	if strings.TrimSpace(analysis.Supersedes) == "" {
+		analysis.Supersedes = ""
+		analysis.Delta = nil
+		return nil
+	}
+
+	previous, ok := st.Accepted[analysis.Supersedes]
+	if !ok {
+		return fmt.Errorf("lineage rejected: supersedes %q is not REG-accepted", analysis.Supersedes)
+	}
+
+	analysis.Delta = deriveDelta(previous, *analysis)
 	return nil
 }
 

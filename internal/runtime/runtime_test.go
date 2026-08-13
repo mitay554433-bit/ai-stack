@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"emergion-sovereign-runtime/internal/core"
+	livefield "emergion-sovereign-runtime/internal/field"
 	"emergion-sovereign-runtime/internal/gov"
 	"emergion-sovereign-runtime/internal/reason"
 	"emergion-sovereign-runtime/internal/reg"
@@ -307,5 +308,180 @@ func TestGovernedStateContextRemainsValidJSON(t *testing.T) {
 
 	if len(decoded) == 0 {
 		t.Fatal("bounded projection unexpectedly empty")
+	}
+}
+
+func TestReworkRejectsNonReturnedPredecessor(t *testing.T) {
+	root := t.TempDir()
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	source := filepath.Join(root, "rework.txt")
+	if err := os.WriteFile(source, []byte("corrected source"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store:               s,
+		ReturnedPredecessor: "E-NOT-RETURNED",
+		Reasoner: lineageReasoner{
+			result: reason.Result{
+				Summary:       "corrected source",
+				Relationships: map[string]string{"source_name": "rework.txt"},
+				Capabilities:  []string{"OBS"},
+				Facts:         []string{"source_preserved"},
+				Risk:          "L",
+			},
+		},
+	}
+
+	_, _, err = r.Capture(context.Background(), source, false)
+	if err == nil {
+		t.Fatal("expected non-returned predecessor to be rejected")
+	}
+
+	events, eventErr := s.Events()
+	if eventErr != nil {
+		t.Fatal(eventErr)
+	}
+	if len(events) != 0 {
+		t.Fatalf("invalid rework wrote events: %d", len(events))
+	}
+}
+
+func TestReturnedEmergIONReentersThroughRework(t *testing.T) {
+	root := t.TempDir()
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	original := core.EmergION{
+		IDN: "E-RETURNED-ORIGINAL",
+		STA: core.StateAtGOV,
+		MEM: core.Memory{
+			SourceHash: "returned-original-hash",
+			Bytes:      1,
+			Stored:     1,
+			Summary:    "original implementation",
+		},
+		REL: map[string]string{
+			"source_name": "original.txt",
+		},
+		CAP: []string{"OBS"},
+		VAL: core.Validation{
+			Facts:  []string{"source_preserved"},
+			Risk:   "M",
+			Recoil: true,
+			WVC:    true,
+		},
+		EVO: core.Evolution{
+			Version: 1,
+		},
+	}
+
+	if _, err := s.SaveCandidate(original); err != nil {
+		t.Fatal(err)
+	}
+
+	_, returnedReceipt, err := gov.Decide(
+		original,
+		gov.Return,
+		"HUMAN_FINAL",
+		"correct and resubmit",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.SaveDecision(returnedReceipt); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := s.Events()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := livefield.Rebuild(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := state.Returned[original.IDN]; !ok {
+		t.Fatal("original EmergION did not enter RETURNED state")
+	}
+
+	correctedPath := filepath.Join(root, "corrected.txt")
+	if err := os.WriteFile(
+		correctedPath,
+		[]byte("corrected implementation"),
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store:               s,
+		ReturnedPredecessor: original.IDN,
+		Reasoner: lineageReasoner{
+			result: reason.Result{
+				Summary: "corrected implementation",
+				Relationships: map[string]string{
+					"source_name": "corrected.txt",
+				},
+				Capabilities: []string{"OBS", "CMP"},
+				Facts:        []string{"source_preserved"},
+				Risk:         "L",
+			},
+		},
+	}
+
+	successor, duplicate, err := r.Capture(
+		context.Background(),
+		correctedPath,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate {
+		t.Fatal("corrected source unexpectedly treated as duplicate")
+	}
+
+	if successor.STA != core.StateAtGOV {
+		t.Fatalf("reworked EmergION did not return to GOV: %s", successor.STA)
+	}
+
+	if successor.EVO.Supersedes != original.IDN {
+		t.Fatalf(
+			"rework lineage lost: got %q want %q",
+			successor.EVO.Supersedes,
+			original.IDN,
+		)
+	}
+
+	if len(successor.EVO.Delta) == 0 {
+		t.Fatal("reworked EmergION has no deterministic delta")
+	}
+
+	foundSummary := false
+	foundCapability := false
+	for _, item := range successor.EVO.Delta {
+		switch item {
+		case "SUMMARY_CHANGED":
+			foundSummary = true
+		case "CAP_ADDED:CMP":
+			foundCapability = true
+		}
+	}
+
+	if !foundSummary {
+		t.Fatalf("summary delta missing: %#v", successor.EVO.Delta)
+	}
+	if !foundCapability {
+		t.Fatalf("capability delta missing: %#v", successor.EVO.Delta)
 	}
 }
