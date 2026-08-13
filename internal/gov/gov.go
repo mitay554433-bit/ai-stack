@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"emergion-sovereign-runtime/internal/core"
+	"emergion-sovereign-runtime/internal/pivot"
 )
 
 type Decision string
@@ -19,11 +20,23 @@ const (
 )
 
 func Decide(em core.EmergION, d Decision, authority, reason string) (core.EmergION, core.DecisionReceipt, error) {
-	if authority != "HUMAN_FINAL" {
-		return em, core.DecisionReceipt{}, fmt.Errorf("HUMAN_FINAL required")
-	}
-	if em.STA != core.StateAtGOV {
-		return em, core.DecisionReceipt{}, fmt.Errorf("EmergION is not at GOV")
+	_, err := pivot.Observe(
+		"GOV_DECISION",
+		"REQUESTED_DECISION",
+		"GOVERNED_STATE_AND_AUTHORITY",
+		"HUMAN_FINAL_AND_STATE_G",
+		func() error {
+			if authority != "HUMAN_FINAL" {
+				return fmt.Errorf("HUMAN_FINAL required")
+			}
+			if em.STA != core.StateAtGOV {
+				return fmt.Errorf("EmergION is not at GOV")
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		return em, core.DecisionReceipt{}, err
 	}
 	d = Decision(strings.ToUpper(string(d)))
 	switch d {
@@ -43,11 +56,23 @@ func Decide(em core.EmergION, d Decision, authority, reason string) (core.EmergI
 }
 
 func ResumeHeld(em core.EmergION, authority, reason string) (core.EmergION, core.DecisionReceipt, error) {
-	if authority != "HUMAN_FINAL" {
-		return em, core.DecisionReceipt{}, fmt.Errorf("HUMAN_FINAL required")
-	}
-	if em.STA != core.StateHeld {
-		return em, core.DecisionReceipt{}, fmt.Errorf("EmergION is not held")
+	_, err := pivot.Observe(
+		"GOV_RESUME",
+		"RESUME_REQUEST",
+		"HELD_STATE_AND_AUTHORITY",
+		"HUMAN_FINAL_AND_STATE_H",
+		func() error {
+			if authority != "HUMAN_FINAL" {
+				return fmt.Errorf("HUMAN_FINAL required")
+			}
+			if em.STA != core.StateHeld {
+				return fmt.Errorf("EmergION is not held")
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		return em, core.DecisionReceipt{}, err
 	}
 
 	em.STA = core.StateAtGOV

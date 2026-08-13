@@ -2,6 +2,7 @@ package field
 
 import (
 	"emergion-sovereign-runtime/internal/core"
+	"emergion-sovereign-runtime/internal/pivot"
 	"fmt"
 )
 
@@ -25,13 +26,26 @@ func Rebuild(events []core.Event) (core.State, error) {
 				return st, fmt.Errorf("decision event missing receipt")
 			}
 
+			_, err := pivot.Observe(
+				"GOV_REPLAY",
+				"DECISION_RECEIPT",
+				"LEDGER_AUTHORITY_OBSERVATION",
+				"HUMAN_FINAL_REQUIRED",
+				func() error {
+					if ev.Decision.Authority != "HUMAN_FINAL" {
+						return fmt.Errorf("decision requires HUMAN_FINAL")
+					}
+					return nil
+				},
+			)
+			if err != nil {
+				return st, err
+			}
+
 			if ev.Decision.Decision == "RESUME" {
 				em, ok := st.Held[ev.Decision.EmergIONID]
 				if !ok {
 					return st, fmt.Errorf("resume target not held: %s", ev.Decision.EmergIONID)
-				}
-				if ev.Decision.Authority != "HUMAN_FINAL" {
-					return st, fmt.Errorf("resume requires HUMAN_FINAL")
 				}
 				delete(st.Held, em.IDN)
 				em.STA = core.StateAtGOV

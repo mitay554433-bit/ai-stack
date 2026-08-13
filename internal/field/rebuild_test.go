@@ -196,3 +196,32 @@ func TestRejectedEmergIONCannotResume(t *testing.T) {
 		t.Fatal("rejected EmergION was resumed")
 	}
 }
+
+func TestDecisionReplayRequiresHumanFinal(t *testing.T) {
+	em := core.EmergION{
+		IDN: "E-AUTHORITY",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{Version: 1},
+	}
+
+	events := []core.Event{
+		{
+			Type:     "C",
+			ID:       "EV-C",
+			EmergION: &em,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: em.IDN,
+				Decision:   "APPROVE",
+				Authority:  "MODEL",
+			},
+		},
+	}
+
+	if _, err := Rebuild(events); err == nil {
+		t.Fatal("non-HUMAN_FINAL decision replay was accepted")
+	}
+}
