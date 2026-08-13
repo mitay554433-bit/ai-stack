@@ -233,6 +233,9 @@ func (e EmergION) Symbolic() string {
 	} else {
 		fmt.Fprintf(&b, "退印=RETURN_TO:%s\n", e.MEM.SourceHash)
 	}
+	if len(e.EVO.Delta) > 0 {
+		fmt.Fprintf(&b, "変=%s\n", strings.Join(e.EVO.Delta, "|"))
+	}
 	b.WriteString("進行/終\n")
 
 	b.WriteString("退行/始\n")

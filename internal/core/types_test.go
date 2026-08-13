@@ -79,3 +79,34 @@ func TestEmergIONSymbolicUsesSupersedesForBackwardImprint(t *testing.T) {
 		t.Fatalf("symbolic EmergION used source fallback despite predecessor:\n%s", got)
 	}
 }
+
+func TestEmergIONSymbolicRendersGovernedDelta(t *testing.T) {
+	em := EmergION{
+		IDN: "E-DELTA",
+		STA: StateAtGOV,
+		MEM: Memory{
+			SourceHash: "newhash",
+		},
+		VAL: Validation{
+			Recoil: true,
+			WVC:    true,
+		},
+		EVO: Evolution{
+			Version:    1,
+			Supersedes: "E-PRIOR",
+			Delta: []string{
+				"SUMMARY_CHANGED",
+				"CAP_ADDED:OBS",
+			},
+		},
+	}
+
+	got := em.Symbolic()
+
+	if !strings.Contains(
+		got,
+		"変=SUMMARY_CHANGED|CAP_ADDED:OBS\n",
+	) {
+		t.Fatalf("symbolic governed delta missing:\n%s", got)
+	}
+}
