@@ -1190,3 +1190,93 @@ func TestProtectorReciprocalAuthorityEnvelope(t *testing.T) {
 		)
 	}
 }
+
+func TestRecoilIntegrityRequiresProtectorEnvelope(t *testing.T) {
+	em := core.EmergION{
+		MEM: core.Memory{
+			SourceHash: "source-hash",
+			Bytes:      10,
+			Stored:     10,
+			Summary:    "candidate",
+		},
+		REL: map[string]string{
+			"source_name": "candidate.txt",
+		},
+		CAP: []string{"OBS"},
+		VAL: core.Validation{
+			Facts: []string{"source_preserved"},
+		},
+	}
+
+	err := recoilIntegrity(em)
+	if err == nil {
+		t.Fatal("expected missing PROTECTOR envelope rejection")
+	}
+
+	if !strings.Contains(err.Error(), "PROTECTOR") {
+		t.Fatalf("unexpected RECOIL error: %v", err)
+	}
+}
+
+func TestRecoilIntegrityAcceptsPostProtectorCandidate(t *testing.T) {
+	em := core.EmergION{
+		MEM: core.Memory{
+			SourceHash: "source-hash",
+			Bytes:      10,
+			Stored:     10,
+			Summary:    "candidate",
+		},
+		REL: map[string]string{
+			"source_name": "candidate.txt",
+		},
+		CAP: []string{"SEND"},
+		VAL: core.Validation{
+			Facts: []string{"source_preserved"},
+		},
+	}
+
+	if err := protector(&em); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := recoilIntegrity(em); err != nil {
+		t.Fatalf("post-PROTECTOR RECOIL failed: %v", err)
+	}
+
+	if em.REL["protector_gate"] != "HUMAN_FINAL_BOUND" {
+		t.Fatalf(
+			"external authority gate missing: %#v",
+			em.REL,
+		)
+	}
+}
+
+func TestRecoilIntegrityAllowsRecaptureBridgegap(t *testing.T) {
+	em := core.EmergION{
+		MEM: core.Memory{
+			SourceHash: "pivot-source-hash",
+			Bytes:      20,
+			Stored:     20,
+			Summary:    "pivot divergence",
+		},
+		REL: map[string]string{
+			"pivot": "COVERAGE",
+		},
+		CAP: []string{"OBS", "CMP", "VLD"},
+		VAL: core.Validation{
+			Facts: []string{"pivot_divergence_observed"},
+			Gaps:  []string{"BRIDGEGAP:PIVOT_COVERAGE"},
+		},
+	}
+
+	if err := protector(&em); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := recoilIntegrity(em); err != nil {
+		t.Fatalf(
+			"RECAPTURE BRIDGEGAP incorrectly rejected: %v",
+			err,
+		)
+	}
+}

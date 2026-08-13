@@ -261,6 +261,31 @@ func stringSet(values []string) map[string]bool {
 	return out
 }
 
+func recoilIntegrity(em core.EmergION) error {
+	if strings.TrimSpace(em.MEM.SourceHash) == "" {
+		return fmt.Errorf("source identity missing")
+	}
+	if em.MEM.Bytes <= 0 || em.MEM.Stored <= 0 {
+		return fmt.Errorf("evidence dimensions invalid")
+	}
+	if strings.TrimSpace(em.MEM.Summary) == "" {
+		return fmt.Errorf("summary missing")
+	}
+	if len(em.VAL.Facts) == 0 {
+		return fmt.Errorf("facts missing")
+	}
+	if len(em.CAP) == 0 {
+		return fmt.Errorf("capabilities missing")
+	}
+	if len(em.REL) == 0 {
+		return fmt.Errorf("relationships missing")
+	}
+	if strings.TrimSpace(em.REL["protector"]) == "" {
+		return fmt.Errorf("PROTECTOR envelope missing")
+	}
+	return nil
+}
+
 func runtimeDerivedRelationship(key string) bool {
 	return key == "protector" || key == "protector_gate"
 }
@@ -462,12 +487,9 @@ func (r Runtime) recapture(
 		"RECOIL",
 		"PIVOT_DIVERGENCE_CLAIM",
 		"DIVERGENCE_EVIDENCE_OBSERVATION",
-		"SUMMARY_PRESENT",
+		"POST_RECAPTURE_PROTECTOR_INTEGRITY",
 		func() error {
-			if strings.TrimSpace(em.MEM.Summary) == "" {
-				return fmt.Errorf("empty divergence summary")
-			}
-			return nil
+			return recoilIntegrity(em)
 		},
 	)
 	if err != nil {
@@ -592,12 +614,9 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		"RECOIL",
 		"CANDIDATE_CLAIM",
 		"CANDIDATE_OBSERVATION",
-		"SUMMARY_PRESENT",
+		"POST_PROTECTOR_CANDIDATE_INTEGRITY",
 		func() error {
-			if strings.TrimSpace(em.MEM.Summary) == "" {
-				return fmt.Errorf("empty summary")
-			}
-			return nil
+			return recoilIntegrity(em)
 		},
 	)
 	if err != nil {
