@@ -1,15 +1,17 @@
 package pivot
 
-import "fmt"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"strings"
 
-// Result records one reciprocal execution boundary.
+	"emergion-sovereign-runtime/internal/core"
+)
+
+// Result is evidence produced at a reciprocal execution boundary.
 //
-// Forward describes what the active side is attempting.
-// Reciprocal describes what observes or verifies that attempt.
-// Invariant is the condition that must hold before execution may cross
-// the boundary.
-//
-// Result is evidence only. It grants no authority and persists nothing.
+// It carries no authority and persists nothing by itself.
 type Result struct {
 	Name       string
 	Forward    string
@@ -19,9 +21,125 @@ type Result struct {
 	Divergence string
 }
 
+// DivergenceError is both an error and an emergence boundary.
+//
+// The EmergION inside it is deliberately non-authoritative:
+// it has not passed RECOIL, WVC, GOV, or REG.
+type DivergenceError struct {
+	Result   Result
+	EmergION core.EmergION
+}
+
+func (e *DivergenceError) Error() string {
+	return fmt.Sprintf(
+		"%s pivot divergence: %s",
+		e.Result.Name,
+		e.Result.Divergence,
+	)
+}
+
+func bridgegapName(name string) string {
+	name = strings.ToUpper(strings.TrimSpace(name))
+
+	var b strings.Builder
+	lastUnderscore := false
+
+	for _, r := range name {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r)
+			lastUnderscore = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastUnderscore = false
+		default:
+			if b.Len() != 0 && !lastUnderscore {
+				b.WriteByte('_')
+				lastUnderscore = true
+			}
+		}
+	}
+
+	return strings.Trim(b.String(), "_")
+}
+
+func divergenceEmergION(result Result) core.EmergION {
+	evidence := strings.Join([]string{
+		"name=" + result.Name,
+		"forward=" + result.Forward,
+		"reciprocal=" + result.Reciprocal,
+		"invariant=" + result.Invariant,
+		"divergence=" + result.Divergence,
+	}, "\n")
+
+	sum := sha256.Sum256([]byte(evidence))
+	sourceHash := hex.EncodeToString(sum[:])
+
+	gap := "BRIDGEGAP:PIVOT"
+	if name := bridgegapName(result.Name); name != "" {
+		gap = "BRIDGEGAP:PIVOT_" + name
+	}
+
+	return core.EmergION{
+		IDN: "E-" + strings.ToUpper(sourceHash[:16]),
+
+		// Deliberately not admitted to GOV.
+		STA: "",
+
+		MEM: core.Memory{
+			SourceHash: sourceHash,
+			Codec:      "pivot",
+			Bytes:      int64(len(evidence)),
+			Stored:     int64(len(evidence)),
+			Summary: fmt.Sprintf(
+				"pivot divergence %s: %s",
+				result.Name,
+				result.Divergence,
+			),
+			Provenance: "reciprocal_pivot",
+		},
+
+		REL: map[string]string{
+			"pivot":      result.Name,
+			"forward":    result.Forward,
+			"reciprocal": result.Reciprocal,
+			"invariant":  result.Invariant,
+		},
+
+		CAP: []string{
+			"OBS",
+			"CMP",
+			"VLD",
+		},
+
+		VAL: core.Validation{
+			Facts: []string{
+				"pivot_divergence_observed",
+			},
+			Gaps: []string{
+				gap,
+			},
+			Risk:        "M",
+			Recoil:      false,
+			WVC:         false,
+			Reasoner:    "reciprocal_pivot",
+			ReasonerVer: "1",
+		},
+
+		EVO: core.Evolution{
+			Version: 1,
+		},
+	}
+}
+
 // Observe executes the reciprocal observation for an already-produced
-// forward result. A divergence fails closed before the caller crosses
-// its authoritative boundary.
+// forward result.
+//
+// Agreement returns a passing Result.
+//
+// Divergence fails closed and returns a DivergenceError containing the
+// structured Result plus a non-authoritative EmergION generated from the
+// divergence evidence.
 func Observe(
 	name string,
 	forward string,
@@ -38,20 +156,20 @@ func Observe(
 
 	if check == nil {
 		result.Divergence = "reciprocal check missing"
-		return result, fmt.Errorf(
-			"%s pivot divergence: %s",
-			name,
-			result.Divergence,
-		)
+
+		return result, &DivergenceError{
+			Result:   result,
+			EmergION: divergenceEmergION(result),
+		}
 	}
 
 	if err := check(); err != nil {
 		result.Divergence = err.Error()
-		return result, fmt.Errorf(
-			"%s pivot divergence: %w",
-			name,
-			err,
-		)
+
+		return result, &DivergenceError{
+			Result:   result,
+			EmergION: divergenceEmergION(result),
+		}
 	}
 
 	result.Passed = true
