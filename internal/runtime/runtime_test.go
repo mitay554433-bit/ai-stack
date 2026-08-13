@@ -485,3 +485,220 @@ func TestReturnedEmergIONReentersThroughRework(t *testing.T) {
 		t.Fatalf("capability delta missing: %#v", successor.EVO.Delta)
 	}
 }
+
+func TestFullGovernedEmergenceLoop(t *testing.T) {
+	root := t.TempDir()
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	originalPath := filepath.Join(root, "original.txt")
+	if err := os.WriteFile(originalPath, []byte("original implementation"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	initialReasoner := lineageReasoner{
+		result: reason.Result{
+			Summary:       "original implementation",
+			Relationships: map[string]string{"source_name": "original.txt"},
+			Capabilities:  []string{"OBS"},
+			Facts:         []string{"source_preserved"},
+			Risk:          "M",
+		},
+	}
+
+	rt := Runtime{
+		Store:    s,
+		Reasoner: initialReasoner,
+	}
+
+	original, duplicate, err := rt.Capture(
+		context.Background(),
+		originalPath,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate {
+		t.Fatal("original source unexpectedly duplicate")
+	}
+	if original.STA != core.StateAtGOV {
+		t.Fatalf("original state = %s", original.STA)
+	}
+
+	_, returnReceipt, err := gov.Decide(
+		original,
+		gov.Return,
+		"HUMAN_FINAL",
+		"correct and resubmit",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.SaveDecision(returnReceipt); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := livefield.Rebuild(mustEvents(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := state.Returned[original.IDN]; !ok {
+		t.Fatal("original did not enter returned state")
+	}
+
+	correctedPath := filepath.Join(root, "corrected.txt")
+	if err := os.WriteFile(correctedPath, []byte("corrected implementation"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	rework := Runtime{
+		Store:               s,
+		ReturnedPredecessor: original.IDN,
+		Reasoner: lineageReasoner{
+			result: reason.Result{
+				Summary: "corrected implementation",
+				Relationships: map[string]string{
+					"source_name": "corrected.txt",
+				},
+				Capabilities: []string{"OBS", "CMP"},
+				Facts:        []string{"source_preserved"},
+				Risk:         "L",
+			},
+		},
+	}
+
+	successor, duplicate, err := rework.Capture(
+		context.Background(),
+		correctedPath,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate {
+		t.Fatal("corrected source unexpectedly duplicate")
+	}
+	if successor.STA != core.StateAtGOV {
+		t.Fatalf("reworked state = %s", successor.STA)
+	}
+	if successor.EVO.Supersedes != original.IDN {
+		t.Fatalf(
+			"rework predecessor = %q want %q",
+			successor.EVO.Supersedes,
+			original.IDN,
+		)
+	}
+
+	held, holdReceipt, err := gov.Decide(
+		successor,
+		gov.Hold,
+		"HUMAN_FINAL",
+		"pause for review",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held.STA != core.StateHeld {
+		t.Fatalf("hold state = %s", held.STA)
+	}
+	if _, err := s.SaveDecision(holdReceipt); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err = livefield.Rebuild(mustEvents(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	heldState, ok := state.Held[successor.IDN]
+	if !ok {
+		t.Fatal("successor did not enter held state")
+	}
+
+	resumed, resumeReceipt, err := gov.ResumeHeld(
+		heldState,
+		"HUMAN_FINAL",
+		"resume review",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.STA != core.StateAtGOV {
+		t.Fatalf("resume state = %s", resumed.STA)
+	}
+	if _, err := s.SaveDecision(resumeReceipt); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err = livefield.Rebuild(mustEvents(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumedState, ok := state.AtGOV[successor.IDN]
+	if !ok {
+		t.Fatal("resumed successor did not return to GOV")
+	}
+
+	approved, approveReceipt, err := gov.Decide(
+		resumedState,
+		gov.Approve,
+		"HUMAN_FINAL",
+		"approve corrected implementation",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decisionID, err := s.SaveDecision(approveReceipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	accepted, regReceipt, err := reg.Accept(approved, decisionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted.STA != core.StateAccepted {
+		t.Fatalf("accepted state = %s", accepted.STA)
+	}
+
+	if _, err := s.SaveAccepted(regReceipt); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err = livefield.Rebuild(mustEvents(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	final, ok := state.Accepted[successor.IDN]
+	if !ok {
+		t.Fatal("successor did not reach REG accepted state")
+	}
+	if final.STA != core.StateAccepted {
+		t.Fatalf("final state = %s", final.STA)
+	}
+	if final.EVO.Supersedes != original.IDN {
+		t.Fatalf(
+			"final lineage = %q want %q",
+			final.EVO.Supersedes,
+			original.IDN,
+		)
+	}
+	if len(final.EVO.Delta) == 0 {
+		t.Fatal("final governed delta missing")
+	}
+}
+
+func mustEvents(t *testing.T, s *store.Store) []core.Event {
+	t.Helper()
+
+	events, err := s.Events()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return events
+}
