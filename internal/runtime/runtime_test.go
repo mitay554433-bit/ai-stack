@@ -10,6 +10,7 @@ import (
 	"emergion-sovereign-runtime/internal/reg"
 	"emergion-sovereign-runtime/internal/store"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -812,5 +813,63 @@ func TestPivotDivergenceReentersNormalAdmission(t *testing.T) {
 
 	if _, ok := state.Accepted[em.IDN]; ok {
 		t.Fatal("divergence self-authorized into REG")
+	}
+}
+
+func TestRecaptureReturnsTypedContinuationResult(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store:    s,
+		Reasoner: lineageReasoner{},
+	}
+
+	_, cause := pivot.Observe(
+		"WVC",
+		"SOURCE_IDENTITY_CLAIM",
+		"PRESERVED_EVIDENCE_OBSERVATION",
+		"SOURCE_HASH_MATCH",
+		func() error {
+			return fmt.Errorf("source hash mismatch")
+		},
+	)
+	if cause == nil {
+		t.Fatal("expected pivot divergence")
+	}
+
+	em, _, err := r.recapture(
+		context.Background(),
+		"",
+		cause,
+	)
+	if err == nil {
+		t.Fatal("RECAPTURE must retain original divergence")
+	}
+
+	var recaptured *RecaptureError
+	if !errors.As(err, &recaptured) {
+		t.Fatalf("error type = %T", err)
+	}
+
+	if recaptured.EmergION.IDN != em.IDN {
+		t.Fatalf(
+			"RECAPTURE identity = %q want %q",
+			recaptured.EmergION.IDN,
+			em.IDN,
+		)
+	}
+
+	if recaptured.EmergION.STA != core.StateAtGOV {
+		t.Fatalf("RECAPTURE state = %q", recaptured.EmergION.STA)
+	}
+
+	if !recaptured.EmergION.VAL.Recoil ||
+		!recaptured.EmergION.VAL.WVC {
+		t.Fatal("RECAPTURE result is not verified")
 	}
 }

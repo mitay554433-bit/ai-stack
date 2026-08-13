@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,23 @@ import (
 	"emergion-sovereign-runtime/internal/reason"
 	"emergion-sovereign-runtime/internal/store"
 )
+
+type RecaptureError struct {
+	Cause    error
+	EmergION core.EmergION
+}
+
+func (e *RecaptureError) Error() string {
+	return fmt.Sprintf(
+		"%v; RECAPTURE emerged as %s AT_GOV",
+		e.Cause,
+		e.EmergION.IDN,
+	)
+}
+
+func (e *RecaptureError) Unwrap() error {
+	return e.Cause
+}
 
 type Runtime struct {
 	Store               *store.Store
@@ -413,11 +431,10 @@ func (r Runtime) recapture(
 		return em, false, err
 	}
 
-	return em, false, fmt.Errorf(
-		"%w; RECAPTURE emerged as %s AT_GOV",
-		cause,
-		em.IDN,
-	)
+	return em, false, &RecaptureError{
+		Cause:    cause,
+		EmergION: em,
+	}
 }
 
 func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool) (core.EmergION, bool, error) {
@@ -547,9 +564,29 @@ func (r Runtime) Once(ctx context.Context, dropzone string) ([]string, error) {
 		if ent.IsDir() || strings.HasPrefix(ent.Name(), ".") {
 			continue
 		}
-		em, _, err := r.Capture(ctx, filepath.Join(dropzone, ent.Name()), true)
+		path := filepath.Join(dropzone, ent.Name())
+		em, _, err := r.Capture(ctx, path, true)
 		if err != nil {
-			return ids, fmt.Errorf("%s: %w", ent.Name(), err)
+			var recaptured *RecaptureError
+			if !errors.As(err, &recaptured) {
+				return ids, fmt.Errorf("%s: %w", ent.Name(), err)
+			}
+
+			if recaptured.EmergION.STA != core.StateAtGOV ||
+				!recaptured.EmergION.VAL.Recoil ||
+				!recaptured.EmergION.VAL.WVC {
+				return ids, fmt.Errorf("%s: RECAPTURE not GOV-ready", ent.Name())
+			}
+
+			if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				return ids, fmt.Errorf(
+					"%s: RECAPTURE succeeded but source could not clear dropzone: %w",
+					ent.Name(),
+					removeErr,
+				)
+			}
+
+			em = recaptured.EmergION
 		}
 		ids = append(ids, em.IDN)
 	}
