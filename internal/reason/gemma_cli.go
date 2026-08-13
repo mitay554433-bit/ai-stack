@@ -239,16 +239,52 @@ SOURCE:
 }
 
 func parseResult(s string) (Result, error) {
-	start := strings.IndexByte(s, '{')
-	end := strings.LastIndexByte(s, '}')
-	if start < 0 || end <= start {
-		return Result{}, fmt.Errorf("no JSON object")
+	for start := len(s) - 1; start >= 0; start-- {
+		if s[start] != '{' {
+			continue
+		}
+
+		dec := json.NewDecoder(strings.NewReader(s[start:]))
+
+		var raw map[string]json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			continue
+		}
+
+		required := []string{
+			"summary",
+			"relationships",
+			"capabilities",
+			"facts",
+			"gaps",
+			"risk",
+		}
+
+		complete := true
+		for _, key := range required {
+			if _, ok := raw[key]; !ok {
+				complete = false
+				break
+			}
+		}
+		if !complete {
+			continue
+		}
+
+		b, err := json.Marshal(raw)
+		if err != nil {
+			continue
+		}
+
+		var r Result
+		if err := json.Unmarshal(b, &r); err != nil {
+			continue
+		}
+
+		return r, nil
 	}
-	var r Result
-	if err := json.Unmarshal([]byte(s[start:end+1]), &r); err != nil {
-		return Result{}, err
-	}
-	return r, nil
+
+	return Result{}, fmt.Errorf("no complete Result JSON object")
 }
 
 func Calibrate(r Result) Result {

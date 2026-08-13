@@ -75,3 +75,34 @@ func TestGemmaArgsEnforceOneShotExecution(t *testing.T) {
 		)
 	}
 }
+
+func TestParseResultIgnoresPromptJSONAndTransportNoise(t *testing.T) {
+	output := `Loading model...
+
+> Analyze SOURCE.
+GOVERNED_ACCEPTED_STATE:
+[{"id":"E-OLD","summary":"accepted"}]
+
+{"summary":"bounded result","relationships":{"source":"probe"},"capabilities":["OBS"],"facts":["source_observed"],"gaps":[],"risk":"L"}
+
+[ Prompt: 10 t/s | Generation: 4 t/s ]
+Exiting...
+`
+
+	got, err := parseResult(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Summary != "bounded result" {
+		t.Fatalf("wrong result selected: %#v", got)
+	}
+
+	if got.Relationships["source"] != "probe" {
+		t.Fatalf("relationships lost: %#v", got.Relationships)
+	}
+
+	if got.Risk != "L" {
+		t.Fatalf("risk mismatch: %q", got.Risk)
+	}
+}
