@@ -166,7 +166,7 @@ func (g GemmaCLI) Validate() error {
 	return nil
 }
 
-const gemmaResultJSONSchema = `{"type":"object","properties":{"summary":{"type":"string"},"relationships":{"type":"object","additionalProperties":{"type":"string"}},"capabilities":{"type":"array","items":{"type":"string"}},"facts":{"type":"array","items":{"type":"string"}},"gaps":{"type":"array","items":{"type":"string"}},"risk":{"type":"string","enum":["L","M","H"]},"supersedes":{"type":"string"},"facets":{"type":"array","items":{"type":"string","enum":["FIELD_COMMAND","EMERGENCE_CAPTURE","PROGRAM_FORGE","PRODUCT_STORE","CUSTOMERS_SALES","COMMUNICATIONS","PAYMENTS_FINANCE","GRANT_FUNDING","PATENT_IP","MA_PARTNERSHIPS","DOCS_PROJECTION","ANALYTICS_FORECAST"]}},"build_nodes":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"system":{"type":"string"},"state":{"type":"string"}},"required":["id","system","state"],"additionalProperties":false}},"build_edges":{"type":"array","items":{"type":"object","properties":{"from":{"type":"string"},"to":{"type":"string"},"kind":{"type":"string"}},"required":["from","to","kind"],"additionalProperties":false}},"monetization":{"anyOf":[{"type":"object","properties":{"model":{"type":"string"},"customer":{"type":"string"},"value":{"type":"string"},"revenue_path":{"type":"string"}},"required":["model","customer","value","revenue_path"],"additionalProperties":false},{"type":"null"}]}},"required":["summary","relationships","capabilities","facts","gaps","risk"],"additionalProperties":false}`
+const gemmaResultJSONSchema = `{"type":"object","properties":{"summary":{"type":"string"},"relationships":{"type":"object","additionalProperties":{"type":"string"}},"capabilities":{"type":"array","items":{"type":"string"}},"facts":{"type":"array","items":{"type":"string"}},"gaps":{"type":"array","items":{"type":"string"}},"risk":{"type":"string","enum":["L","M","H"]},"supersedes":{"anyOf":[{"type":"string"},{"type":"null"}]},"facets":{"type":"array","items":{"type":"string","enum":["FIELD_COMMAND","EMERGENCE_CAPTURE","PROGRAM_FORGE","PRODUCT_STORE","CUSTOMERS_SALES","COMMUNICATIONS","PAYMENTS_FINANCE","GRANT_FUNDING","PATENT_IP","MA_PARTNERSHIPS","DOCS_PROJECTION","ANALYTICS_FORECAST"]}},"build_nodes":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"system":{"type":"string"},"state":{"type":"string"}},"required":["id","system","state"],"additionalProperties":false}},"build_edges":{"type":"array","items":{"type":"object","properties":{"from":{"type":"string"},"to":{"type":"string"},"kind":{"type":"string"}},"required":["from","to","kind"],"additionalProperties":false}},"monetization":{"anyOf":[{"type":"object","properties":{"model":{"type":"string"},"customer":{"type":"string"},"value":{"type":"string"},"revenue_path":{"type":"string"}},"required":["model","customer","value","revenue_path"],"additionalProperties":false},{"type":"null"}]}},"required":["summary","relationships","capabilities","facts","gaps","risk"],"additionalProperties":false}`
 
 func gemmaArgs(g GemmaCLI, prompt string) []string {
 	args := []string{
@@ -302,6 +302,9 @@ func Calibrate(r Result) Result {
 	r.Facts = clean(r.Facts, 24)
 	r.Gaps = clean(r.Gaps, 24)
 	r.Supersedes = cleanText(r.Supersedes, 80)
+	if strings.EqualFold(r.Supersedes, "null") {
+		r.Supersedes = ""
+	}
 	r.Delta = nil
 	r.Facets = cleanFacets(r.Facets)
 	r.BuildNodes, r.BuildEdges = cleanBuildGraph(r.BuildNodes, r.BuildEdges)
