@@ -201,8 +201,24 @@ func TestCaptureAcceptsREGAcceptedSupersedes(t *testing.T) {
 		)
 	}
 
-	if len(em.EVO.Delta) != 1 || em.EVO.Delta[0] != "changed behavior" {
-		t.Fatalf("delta lost: %#v", em.EVO.Delta)
+	expectedDelta := []string{
+		"SUMMARY_CHANGED",
+		"CAP_ADDED:OBS",
+		"REL_ADDED:governed_state",
+		"REL_ADDED:source_name",
+	}
+	if len(em.EVO.Delta) != len(expectedDelta) {
+		t.Fatalf("unexpected deterministic delta: %#v", em.EVO.Delta)
+	}
+	for i, want := range expectedDelta {
+		if em.EVO.Delta[i] != want {
+			t.Fatalf("delta[%d] = %q want %q; full=%#v", i, em.EVO.Delta[i], want, em.EVO.Delta)
+		}
+	}
+	for _, item := range em.EVO.Delta {
+		if item == "changed behavior" {
+			t.Fatalf("model-supplied delta crossed runtime boundary: %#v", em.EVO.Delta)
+		}
 	}
 
 	if em.STA != core.StateAtGOV {

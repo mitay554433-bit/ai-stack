@@ -150,6 +150,119 @@ func protector(em *core.EmergION) {
 	}
 }
 
+func stringSet(values []string) map[string]bool {
+	out := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out[value] = true
+		}
+	}
+	return out
+}
+
+func deriveDelta(previous core.EmergION, analysis reason.Result) []string {
+	var delta []string
+
+	if strings.TrimSpace(previous.MEM.Summary) != strings.TrimSpace(analysis.Summary) {
+		delta = append(delta, "SUMMARY_CHANGED")
+	}
+
+	previousCaps := stringSet(previous.CAP)
+	currentCaps := stringSet(analysis.Capabilities)
+
+	var addedCaps, removedCaps []string
+	for capability := range currentCaps {
+		if !previousCaps[capability] {
+			addedCaps = append(addedCaps, capability)
+		}
+	}
+	for capability := range previousCaps {
+		if !currentCaps[capability] {
+			removedCaps = append(removedCaps, capability)
+		}
+	}
+	sort.Strings(addedCaps)
+	sort.Strings(removedCaps)
+	for _, capability := range addedCaps {
+		delta = append(delta, "CAP_ADDED:"+capability)
+	}
+	for _, capability := range removedCaps {
+		delta = append(delta, "CAP_REMOVED:"+capability)
+	}
+
+	previousRelationships := previous.REL
+	if previousRelationships == nil {
+		previousRelationships = map[string]string{}
+	}
+	currentRelationships := analysis.Relationships
+	if currentRelationships == nil {
+		currentRelationships = map[string]string{}
+	}
+
+	var relationshipKeys []string
+	seenRelationships := map[string]bool{}
+	for key := range previousRelationships {
+		seenRelationships[key] = true
+		relationshipKeys = append(relationshipKeys, key)
+	}
+	for key := range currentRelationships {
+		if !seenRelationships[key] {
+			relationshipKeys = append(relationshipKeys, key)
+		}
+	}
+	sort.Strings(relationshipKeys)
+
+	for _, key := range relationshipKeys {
+		previousValue, previousOK := previousRelationships[key]
+		currentValue, currentOK := currentRelationships[key]
+		switch {
+		case !previousOK && currentOK:
+			delta = append(delta, "REL_ADDED:"+key)
+		case previousOK && !currentOK:
+			delta = append(delta, "REL_REMOVED:"+key)
+		case previousOK && currentOK && previousValue != currentValue:
+			delta = append(delta, "REL_CHANGED:"+key)
+		}
+	}
+
+	previousFacets := map[string]bool{}
+	if previous.EVO.Metadata != nil {
+		for _, facet := range previous.EVO.Metadata.Facets {
+			value := strings.TrimSpace(string(facet))
+			if value != "" {
+				previousFacets[value] = true
+			}
+		}
+	}
+	currentFacets := stringSet(analysis.Facets)
+
+	var addedFacets, removedFacets []string
+	for facet := range currentFacets {
+		if !previousFacets[facet] {
+			addedFacets = append(addedFacets, facet)
+		}
+	}
+	for facet := range previousFacets {
+		if !currentFacets[facet] {
+			removedFacets = append(removedFacets, facet)
+		}
+	}
+	sort.Strings(addedFacets)
+	sort.Strings(removedFacets)
+	for _, facet := range addedFacets {
+		delta = append(delta, "FACET_ADDED:"+facet)
+	}
+	for _, facet := range removedFacets {
+		delta = append(delta, "FACET_REMOVED:"+facet)
+	}
+
+	if len(delta) == 0 {
+		return []string{"NO_STRUCTURAL_DELTA"}
+	}
+	return delta
+}
+
 func (r Runtime) validateLineage(analysis *reason.Result) error {
 	if strings.TrimSpace(analysis.Supersedes) == "" {
 		analysis.Supersedes = ""
@@ -166,8 +279,10 @@ func (r Runtime) validateLineage(analysis *reason.Result) error {
 		return err
 	}
 
-	if _, ok := st.Accepted[analysis.Supersedes]; !ok {
+	if previous, ok := st.Accepted[analysis.Supersedes]; !ok {
 		return fmt.Errorf("lineage rejected: supersedes %q is not REG-accepted", analysis.Supersedes)
+	} else {
+		analysis.Delta = deriveDelta(previous, *analysis)
 	}
 
 	return nil
