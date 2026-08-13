@@ -992,3 +992,134 @@ func TestOnceContinuesAfterNaturalRecapture(t *testing.T) {
 		t.Fatal("normal EmergION not verified")
 	}
 }
+
+type coverageRecaptureReasoner struct{}
+
+func (coverageRecaptureReasoner) Analyze(
+	_ context.Context,
+	in reason.Input,
+) (reason.Result, error) {
+	if in.Name == "a.txt" {
+		// Valid EmergER output, but deliberately incomplete for COVERAGE.
+		return reason.Result{
+			Summary: "candidate with unresolved coverage",
+			Risk:    "M",
+		}, nil
+	}
+
+	return reason.Result{
+		Summary:       "complete second candidate",
+		Relationships: map[string]string{"source_name": in.Name},
+		Capabilities:  []string{"OBS"},
+		Facts:         []string{"source_preserved"},
+		Risk:          "L",
+	}, nil
+}
+
+func (coverageRecaptureReasoner) Name() string {
+	return "coverage-recapture-test"
+}
+
+func (coverageRecaptureReasoner) Version(context.Context) string {
+	return "1"
+}
+
+func TestOnceContinuesAfterCoverageRecapture(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dropzone := filepath.Join(root, "drop")
+	if err := os.MkdirAll(dropzone, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(dropzone, "a.txt"),
+		[]byte("candidate intentionally missing coverage dimensions"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(dropzone, "b.txt"),
+		[]byte("complete candidate follows coverage divergence"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store:    s,
+		Reasoner: coverageRecaptureReasoner{},
+	}
+
+	ids, err := r.Once(context.Background(), dropzone)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(ids) != 2 {
+		t.Fatalf("Once IDs = %#v", ids)
+	}
+
+	entries, err := os.ReadDir(dropzone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("dropzone not clear: %d entries", len(entries))
+	}
+
+	events, err := s.Events()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := livefield.Rebuild(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recaptured, ok := state.AtGOV[ids[0]]
+	if !ok {
+		t.Fatalf("COVERAGE RECAPTURE %s missing from G", ids[0])
+	}
+
+	if recaptured.STA != core.StateAtGOV ||
+		!recaptured.VAL.Recoil ||
+		!recaptured.VAL.WVC {
+		t.Fatalf("COVERAGE RECAPTURE not verified: %#v", recaptured)
+	}
+
+	if len(recaptured.VAL.Gaps) != 1 ||
+		recaptured.VAL.Gaps[0] != "BRIDGEGAP:PIVOT_COVERAGE" {
+		t.Fatalf(
+			"unexpected RECAPTURE gaps: %#v",
+			recaptured.VAL.Gaps,
+		)
+	}
+
+	if !strings.Contains(
+		recaptured.MEM.Summary,
+		"BRIDGEGAP:facts",
+	) {
+		t.Fatalf(
+			"original COVERAGE divergence missing from RECAPTURE summary: %q",
+			recaptured.MEM.Summary,
+		)
+	}
+
+	normal, ok := state.AtGOV[ids[1]]
+	if !ok {
+		t.Fatalf("normal candidate %s missing from G", ids[1])
+	}
+
+	if !normal.VAL.Recoil || !normal.VAL.WVC {
+		t.Fatal("normal second candidate not verified")
+	}
+}

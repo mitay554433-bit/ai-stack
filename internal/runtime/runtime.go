@@ -490,9 +490,24 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		_, _ = r.Store.PruneOrphans()
 		return core.EmergION{}, false, err
 	}
-	if err := coverage(&em, governedState); err != nil {
+	if coverageErr := coverage(&em, governedState); coverageErr != nil {
+		_, pivotErr := pivot.Observe(
+			"COVERAGE",
+			"CANDIDATE_COVERAGE_CLAIM",
+			"BRIDGEGAP_OBSERVATION",
+			"NO_UNRESOLVED_BRIDGEGAP",
+			func() error {
+				return coverageErr
+			},
+		)
+
 		_, _ = r.Store.PruneOrphans()
-		return em, false, err
+
+		if pivotErr != nil {
+			return r.recapture(ctx, governedState, pivotErr)
+		}
+
+		return em, false, coverageErr
 	}
 
 	protector(&em)
