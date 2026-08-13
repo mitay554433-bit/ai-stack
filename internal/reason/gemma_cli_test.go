@@ -2,8 +2,6 @@ package reason
 
 import "testing"
 
-package reason
-
 import "testing"
 
 func TestParseResult(t *testing.T) {
