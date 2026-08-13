@@ -478,6 +478,15 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 	fr := fixedReasoner{name: r.Reasoner.Name(), version: r.Reasoner.Version(ctx), result: analysis}
 	em, err := (emerger.Engine{Reasoner: fr}).Emerge(ctx, reason.Input{Name: filepath.Base(path), Content: b}, emerger.Evidence{Hash: ev.Hash, Bytes: ev.Bytes, Stored: ev.Stored, Codec: ev.Codec, Provenance: "local_dropzone"})
 	if err != nil {
+		var divergence *pivot.DivergenceError
+		if errors.As(err, &divergence) {
+			// The original source did not cross EmergER. Its preserved
+			// evidence is therefore orphaned; RECAPTURE will preserve
+			// the reciprocal divergence as the next evidence object.
+			_, _ = r.Store.PruneOrphans()
+			return r.recapture(ctx, governedState, err)
+		}
+
 		_, _ = r.Store.PruneOrphans()
 		return core.EmergION{}, false, err
 	}

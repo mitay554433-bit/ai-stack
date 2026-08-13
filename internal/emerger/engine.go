@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"emergion-sovereign-runtime/internal/core"
+	"emergion-sovereign-runtime/internal/pivot"
 	"emergion-sovereign-runtime/internal/reason"
 )
 
@@ -44,8 +45,20 @@ func (e Engine) Emerge(ctx context.Context, in reason.Input, ev Evidence) (core.
 	if err != nil {
 		return core.EmergION{}, err
 	}
-	if strings.TrimSpace(result.Summary) == "" {
-		return core.EmergION{}, fmt.Errorf("RECOIL failed: empty summary")
+	_, err = pivot.Observe(
+		"EMERGER_RECOIL",
+		"REASONER_SUMMARY_CLAIM",
+		"CALIBRATED_SUMMARY_OBSERVATION",
+		"SUMMARY_PRESENT",
+		func() error {
+			if strings.TrimSpace(result.Summary) == "" {
+				return fmt.Errorf("empty summary")
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		return core.EmergION{}, err
 	}
 	id := "E-" + strings.ToUpper(ev.Hash[:16])
 	em := core.EmergION{

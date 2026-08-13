@@ -873,3 +873,122 @@ func TestRecaptureReturnsTypedContinuationResult(t *testing.T) {
 		t.Fatal("RECAPTURE result is not verified")
 	}
 }
+
+type recaptureContinuityReasoner struct{}
+
+func (recaptureContinuityReasoner) Analyze(
+	_ context.Context,
+	in reason.Input,
+) (reason.Result, error) {
+	if in.Name == "a.txt" {
+		return reason.Result{
+			Summary: "",
+			Risk:    "M",
+		}, nil
+	}
+
+	return reason.Result{
+		Summary:       "normal second capture",
+		Relationships: map[string]string{"source_name": in.Name},
+		Capabilities:  []string{"OBS"},
+		Facts:         []string{"source_preserved"},
+		Risk:          "L",
+	}, nil
+}
+
+func (recaptureContinuityReasoner) Name() string {
+	return "recapture-continuity-test"
+}
+
+func (recaptureContinuityReasoner) Version(context.Context) string {
+	return "1"
+}
+
+func TestOnceContinuesAfterNaturalRecapture(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dropzone := filepath.Join(root, "drop")
+	if err := os.MkdirAll(dropzone, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(dropzone, "a.txt"),
+		[]byte("first source causes reciprocal divergence"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(dropzone, "b.txt"),
+		[]byte("second source remains normal"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store:    s,
+		Reasoner: recaptureContinuityReasoner{},
+	}
+
+	ids, err := r.Once(context.Background(), dropzone)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(ids) != 2 {
+		t.Fatalf("Once IDs = %#v", ids)
+	}
+
+	if ids[0] == "" || ids[1] == "" {
+		t.Fatalf("empty EmergION identity: %#v", ids)
+	}
+
+	if ids[0] == ids[1] {
+		t.Fatalf("RECAPTURE and normal capture collided: %#v", ids)
+	}
+
+	entries, err := os.ReadDir(dropzone)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(entries) != 0 {
+		t.Fatalf("dropzone not clear: %d entries", len(entries))
+	}
+
+	events, err := s.Events()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := livefield.Rebuild(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recaptured, ok := state.AtGOV[ids[0]]
+	if !ok {
+		t.Fatalf("RECAPTURE EmergION %s missing from G", ids[0])
+	}
+
+	if !recaptured.VAL.Recoil || !recaptured.VAL.WVC {
+		t.Fatal("RECAPTURE EmergION not verified")
+	}
+
+	normal, ok := state.AtGOV[ids[1]]
+	if !ok {
+		t.Fatalf("normal EmergION %s missing from G", ids[1])
+	}
+
+	if !normal.VAL.Recoil || !normal.VAL.WVC {
+		t.Fatal("normal EmergION not verified")
+	}
+}
