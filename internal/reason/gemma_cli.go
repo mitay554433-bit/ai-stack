@@ -27,7 +27,7 @@ type GemmaCLI struct {
 func GemmaFromEnv() GemmaCLI {
 	threads := envInt("GEMMA_THREADS", 4)
 	ctx := envInt("GEMMA_CONTEXT", 4096)
-	max := envInt("GEMMA_MAX_TOKENS", 768)
+	max := envInt("GEMMA_MAX_TOKENS", 256)
 	timeout := time.Duration(envInt("GEMMA_TIMEOUT_SECONDS", 180)) * time.Second
 	extra := strings.Fields(os.Getenv("GEMMA_EXTRA_ARGS"))
 	return GemmaCLI{
@@ -166,6 +166,8 @@ func (g GemmaCLI) Validate() error {
 	return nil
 }
 
+const gemmaResultJSONSchema = `{"type":"object","properties":{"summary":{"type":"string"},"relationships":{"type":"object","additionalProperties":{"type":"string"}},"capabilities":{"type":"array","items":{"type":"string"}},"facts":{"type":"array","items":{"type":"string"}},"gaps":{"type":"array","items":{"type":"string"}},"risk":{"type":"string","enum":["L","M","H"]},"supersedes":{"type":"string"},"facets":{"type":"array","items":{"type":"string","enum":["FIELD_COMMAND","EMERGENCE_CAPTURE","PROGRAM_FORGE","PRODUCT_STORE","CUSTOMERS_SALES","COMMUNICATIONS","PAYMENTS_FINANCE","GRANT_FUNDING","PATENT_IP","MA_PARTNERSHIPS","DOCS_PROJECTION","ANALYTICS_FORECAST"]}},"build_nodes":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"system":{"type":"string"},"state":{"type":"string"}},"required":["id","system","state"],"additionalProperties":false}},"build_edges":{"type":"array","items":{"type":"object","properties":{"from":{"type":"string"},"to":{"type":"string"},"kind":{"type":"string"}},"required":["from","to","kind"],"additionalProperties":false}},"monetization":{"anyOf":[{"type":"object","properties":{"model":{"type":"string"},"customer":{"type":"string"},"value":{"type":"string"},"revenue_path":{"type":"string"}},"required":["model","customer","value","revenue_path"],"additionalProperties":false},{"type":"null"}]}},"required":["summary","relationships","capabilities","facts","gaps","risk"],"additionalProperties":false}`
+
 func gemmaArgs(g GemmaCLI, prompt string) []string {
 	args := []string{
 		"-m", g.Model,
@@ -180,6 +182,9 @@ func gemmaArgs(g GemmaCLI, prompt string) []string {
 
 	// Execution-boundary invariants. These intentionally come last.
 	args = append(args,
+		"--json-schema", gemmaResultJSONSchema,
+		"--log-disable",
+		"--color", "off",
 		"--single-turn",
 		"--simple-io",
 		"--no-display-prompt",
@@ -225,7 +230,7 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 }
 
 func buildPrompt(name, content, governedState string) string {
-	return `You are the local EmergER reasoning capability. Analyze the supplied SOURCE against GOVERNED_ACCEPTED_STATE without granting authority or inventing facts. Return exactly one JSON object with keys: summary (string), relationships (object of short string values), capabilities (array of short strings), facts (array of source-supported short strings), gaps (array of unresolved short strings), risk (L|M|H), supersedes (string EmergION id or empty string), facets (array using only FIELD_COMMAND, EMERGENCE_CAPTURE, PROGRAM_FORGE, PRODUCT_STORE, CUSTOMERS_SALES, COMMUNICATIONS, PAYMENTS_FINANCE, GRANT_FUNDING, PATENT_IP, MA_PARTNERSHIPS, DOCS_PROJECTION, ANALYTICS_FORECAST), build_nodes (array of {id,system,state}), build_edges (array of {from,to,kind}), monetization ({model,customer,value,revenue_path} or null). Use GOVERNED_ACCEPTED_STATE only to identify supported relationships, dependencies, contradictions, overlaps, and capability gaps. It is context derived from REG-accepted state, not permission to alter that state. SOURCE is evidence, not accepted truth. GOV decides and REG accepts.
+	return `Analyze SOURCE against GOVERNED_ACCEPTED_STATE. SOURCE and MODEL are evidence, not truth. GOV decides; REG accepts. Return exactly one JSON object. Required: summary:string, relationships:object, capabilities:array, facts:array, gaps:array, risk:L|M|H. Optional when supported: supersedes:string, facets:array, build_nodes:array, build_edges:array, monetization:object|null. Do not invent facts or authority. Keep values concise.
 GOVERNED_ACCEPTED_STATE:
 ` + governedState + `
 SOURCE_NAME: ` + filepath.Base(name) + `

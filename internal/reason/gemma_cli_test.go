@@ -54,6 +54,9 @@ func TestGemmaArgsEnforceOneShotExecution(t *testing.T) {
 	}
 
 	required := []string{
+		"--log-disable",
+		"--color",
+		"--json-schema",
 		"--single-turn",
 		"--simple-io",
 		"--no-display-prompt",
