@@ -265,6 +265,70 @@ func main() {
 			"state":    em.STA,
 			"actions":  actions,
 		})
+	case "execute":
+		if len(args) != 4 {
+			fail(fmt.Errorf("usage: field execute <emergion-id> <adapter> <action>"))
+		}
+
+		st := loadState(s)
+
+		request, err := adapters.PrepareExecution(
+			st,
+			args[1],
+			args[2],
+			args[3],
+			gemma.Validate() == nil,
+		)
+		if err != nil {
+			fail(err)
+		}
+
+		var result adapters.ExecutionResult
+		var execErr error
+
+		switch request.Adapter {
+		case "LOCAL_GEMMA":
+			executor := adapters.LocalGemmaExecutor{
+				Store: s,
+				Gemma: gemma,
+			}
+			result, execErr = executor.Execute(request)
+
+		default:
+			fail(fmt.Errorf(
+				"no local executor connected for adapter %s",
+				request.Adapter,
+			))
+		}
+
+		if execErr != nil && result.Error == "" {
+			result.Error = execErr.Error()
+		}
+
+		rt := fieldruntime.Runtime{
+			Store: s,
+		}
+
+		signal, duplicate, err := rt.CaptureExecutionResult(
+			context.Background(),
+			request,
+			result,
+		)
+		if err != nil {
+			fail(err)
+		}
+
+		printJSON(map[string]any{
+			"request":   request,
+			"result":    result,
+			"signal":    signal,
+			"duplicate": duplicate,
+		})
+
+		if execErr != nil {
+			fail(execErr)
+		}
+
 	case "render":
 		out := *output
 		if len(args) > 1 {
@@ -324,6 +388,7 @@ Commands:
   status                       CPU and FIELD metrics
   symbolic <id>                print native symbolic EmergION representation
   actions <id>                 derive read-only bounded actions from REG-accepted state
+  execute <id> <adapter> <action> execute one governed local action and recapture its result
   render [directory]           static JSON and HTML FIELD projection
   verify                       verify chain/evidence and remove orphan objects
   adapters                     show bounded capability adapters
