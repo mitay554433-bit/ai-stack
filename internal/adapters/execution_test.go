@@ -1,0 +1,143 @@
+package adapters
+
+import (
+	"testing"
+	"time"
+
+	"emergion-sovereign-runtime/internal/core"
+)
+
+func executionProofState() core.State {
+	st := core.EmptyState()
+
+	st.Accepted["E-EXEC-PROOF"] = core.EmergION{
+		IDN: "E-EXEC-PROOF",
+		STA: core.StateAccepted,
+		CAP: []string{
+			"DRAFT",
+			"SEND",
+		},
+		EVO: core.Evolution{
+			Metadata: &core.Metadata{
+				CapturedAt: time.Now().UTC(),
+				Facets: []core.Facet{
+					core.FacetCommunications,
+				},
+			},
+		},
+	}
+
+	return st
+}
+
+func TestPrepareExecutionRejectsUnacceptedState(t *testing.T) {
+	st := core.EmptyState()
+
+	_, err := PrepareExecution(
+		st,
+		"E-NOT-ACCEPTED",
+		"EMAIL",
+		"SEND",
+		false,
+	)
+	if err == nil {
+		t.Fatal("unaccepted execution target unexpectedly prepared")
+	}
+}
+
+func TestPrepareExecutionRejectsNonDerivableAction(t *testing.T) {
+	st := executionProofState()
+
+	_, err := PrepareExecution(
+		st,
+		"E-EXEC-PROOF",
+		"PAYMENTS",
+		"TRANSFER",
+		false,
+	)
+	if err == nil {
+		t.Fatal("non-derivable execution unexpectedly prepared")
+	}
+}
+
+func TestPrepareExecutionRequiresQForGatedAction(t *testing.T) {
+	st := executionProofState()
+
+	_, err := PrepareExecution(
+		st,
+		"E-EXEC-PROOF",
+		"EMAIL",
+		"SEND",
+		false,
+	)
+	if err == nil {
+		t.Fatal("SEND without Q unexpectedly prepared")
+	}
+}
+
+func TestPrepareExecutionAcceptsHumanFinalQ(t *testing.T) {
+	st := executionProofState()
+
+	st.ActionAuthorizations = append(
+		st.ActionAuthorizations,
+		core.ActionAuthorizationReceipt{
+			EmergIONID: "E-EXEC-PROOF",
+			Adapter:    "EMAIL",
+			Action:     "SEND",
+			Authority:  "HUMAN_FINAL",
+			Authorized: true,
+			At:         time.Now().UTC(),
+		},
+	)
+
+	request, err := PrepareExecution(
+		st,
+		"E-EXEC-PROOF",
+		"EMAIL",
+		"SEND",
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if request.EmergIONID != "E-EXEC-PROOF" {
+		t.Fatalf("unexpected EmergION: %s", request.EmergIONID)
+	}
+	if request.Adapter != "EMAIL" || request.Action != "SEND" {
+		t.Fatalf("unexpected execution request: %#v", request)
+	}
+}
+
+func TestPrepareExecutionDoesNotMutateAuthorizationState(t *testing.T) {
+	st := executionProofState()
+
+	st.ActionAuthorizations = append(
+		st.ActionAuthorizations,
+		core.ActionAuthorizationReceipt{
+			EmergIONID: "E-EXEC-PROOF",
+			Adapter:    "EMAIL",
+			Action:     "SEND",
+			Authority:  "HUMAN_FINAL",
+			Authorized: true,
+			At:         time.Now().UTC(),
+		},
+	)
+
+	before := len(st.ActionAuthorizations)
+
+	_, err := PrepareExecution(
+		st,
+		"E-EXEC-PROOF",
+		"EMAIL",
+		"SEND",
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(st.ActionAuthorizations) != before {
+		t.Fatal("execution preparation mutated authorization state")
+	}
+}
