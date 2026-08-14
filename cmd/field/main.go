@@ -249,7 +249,9 @@ func main() {
 
 		var facets []string
 		if em.EVO.Metadata != nil {
-			facets = append(facets, em.EVO.Metadata.Facets...)
+			for _, facet := range em.EVO.Metadata.Facets {
+				facets = append(facets, string(facet))
+			}
 		}
 
 		actions := adapters.DeriveActionCandidates(
