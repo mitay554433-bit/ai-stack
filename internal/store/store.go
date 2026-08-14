@@ -174,7 +174,7 @@ func (s *Store) FindBySourceHash(hash string) (core.EmergION, bool, error) {
 	return core.EmergION{}, false, nil
 }
 
-func (s *Store) append(kind, subject string, em *core.EmergION, d *core.DecisionReceipt, r *core.REGReceipt) (string, error) {
+func (s *Store) append(kind, subject string, em *core.EmergION, d *core.DecisionReceipt, r *core.REGReceipt, q *core.ActionAuthorizationReceipt) (string, error) {
 	unlock, err := s.lock()
 	if err != nil {
 		return "", err
@@ -191,7 +191,7 @@ func (s *Store) append(kind, subject string, em *core.EmergION, d *core.Decision
 	now := time.Now().UTC()
 	seed, _ := json.Marshal([]any{kind, subject, now.UnixNano(), prev})
 	h := sha256.Sum256(seed)
-	e := core.Event{Type: kind, ID: "EV-" + strings.ToUpper(hex.EncodeToString(h[:8])), At: now, EmergION: em, Decision: d, REG: r, PrevHash: prev}
+	e := core.Event{Type: kind, ID: "EV-" + strings.ToUpper(hex.EncodeToString(h[:8])), At: now, EmergION: em, Decision: d, REG: r, ActionAuthorization: q, PrevHash: prev}
 	line, err := cosl.Encode(e)
 	if err != nil {
 		return "", err
@@ -259,13 +259,17 @@ func (s *Store) SaveCandidate(em core.EmergION) (string, error) {
 	} else if ok {
 		return existing.IDN, nil
 	}
-	return s.append("C", em.IDN, &em, nil, nil)
+	return s.append("C", em.IDN, &em, nil, nil, nil)
 }
 func (s *Store) SaveDecision(r core.DecisionReceipt) (string, error) {
-	return s.append("D", r.EmergIONID, nil, &r, nil)
+	return s.append("D", r.EmergIONID, nil, &r, nil, nil)
 }
 func (s *Store) SaveAccepted(r core.REGReceipt) (string, error) {
-	return s.append("R", r.EmergIONID, nil, nil, &r)
+	return s.append("R", r.EmergIONID, nil, nil, &r, nil)
+}
+
+func (s *Store) SaveActionAuthorization(r core.ActionAuthorizationReceipt) (string, error) {
+	return s.append("Q", r.EmergIONID, nil, nil, nil, &r)
 }
 
 func (s *Store) lock() (func(), error) {

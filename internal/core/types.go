@@ -156,26 +156,38 @@ type REGReceipt struct {
 	At         time.Time `json:"t"`
 }
 
+type ActionAuthorizationReceipt struct {
+	EmergIONID string    `json:"i"`
+	Adapter    string    `json:"p"`
+	Action     string    `json:"x"`
+	Authority  string    `json:"a"`
+	Authorized bool      `json:"z"`
+	Reason     string    `json:"r,omitempty"`
+	At         time.Time `json:"t"`
+}
+
 type Event struct {
-	Type     string           `json:"t"`
-	ID       string           `json:"i"`
-	At       time.Time        `json:"a"`
-	EmergION *EmergION        `json:"e,omitempty"`
-	Decision *DecisionReceipt `json:"d,omitempty"`
-	REG      *REGReceipt      `json:"r,omitempty"`
-	PrevHash string           `json:"p,omitempty"`
-	SelfHash string           `json:"h"`
+	Type                string                      `json:"t"`
+	ID                  string                      `json:"i"`
+	At                  time.Time                   `json:"a"`
+	EmergION            *EmergION                   `json:"e,omitempty"`
+	Decision            *DecisionReceipt            `json:"d,omitempty"`
+	REG                 *REGReceipt                 `json:"r,omitempty"`
+	ActionAuthorization *ActionAuthorizationReceipt `json:"q,omitempty"`
+	PrevHash            string                      `json:"p,omitempty"`
+	SelfHash            string                      `json:"h"`
 }
 
 type State struct {
-	AtGOV    map[string]EmergION
-	Approved map[string]EmergION
-	Accepted map[string]EmergION
-	Held     map[string]EmergION
-	Rejected map[string]EmergION
-	Returned map[string]EmergION
-	Events   int
-	TipHash  string
+	AtGOV                map[string]EmergION
+	Approved             map[string]EmergION
+	Accepted             map[string]EmergION
+	Held                 map[string]EmergION
+	Rejected             map[string]EmergION
+	Returned             map[string]EmergION
+	ActionAuthorizations []ActionAuthorizationReceipt
+	Events               int
+	TipHash              string
 }
 
 func EmptyState() State {

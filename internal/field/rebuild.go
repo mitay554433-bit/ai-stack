@@ -1,6 +1,7 @@
 package field
 
 import (
+	"emergion-sovereign-runtime/internal/adapters"
 	"emergion-sovereign-runtime/internal/core"
 	"emergion-sovereign-runtime/internal/pivot"
 	"fmt"
@@ -104,6 +105,46 @@ func Rebuild(events []core.Event) (core.State, error) {
 			delete(decisionEvents, em.IDN)
 			em.STA = core.StateAccepted
 			st.Accepted[em.IDN] = em
+		case "Q":
+			if ev.ActionAuthorization == nil {
+				return st, fmt.Errorf("action authorization event missing receipt")
+			}
+
+			receipt := *ev.ActionAuthorization
+			em, ok := st.Accepted[receipt.EmergIONID]
+			if !ok {
+				return st, fmt.Errorf("action authorization target not REG-accepted: %s", receipt.EmergIONID)
+			}
+
+			var facets []string
+			if em.EVO.Metadata != nil {
+				for _, facet := range em.EVO.Metadata.Facets {
+					facets = append(facets, string(facet))
+				}
+			}
+
+			candidates := adapters.DeriveActionCandidates(facets, em.CAP, true)
+			matched := false
+			for _, candidate := range candidates {
+				if candidate.Adapter != receipt.Adapter || candidate.Action != receipt.Action {
+					continue
+				}
+
+				matched = true
+				if candidate.HumanFinalRequired && receipt.Authority != "HUMAN_FINAL" {
+					return st, fmt.Errorf("action %s:%s requires HUMAN_FINAL", receipt.Adapter, receipt.Action)
+				}
+				break
+			}
+
+			if !matched {
+				return st, fmt.Errorf("action %s:%s is not derivable from accepted EmergION %s", receipt.Adapter, receipt.Action, receipt.EmergIONID)
+			}
+			if !receipt.Authorized {
+				return st, fmt.Errorf("action authorization is not authorized")
+			}
+
+			st.ActionAuthorizations = append(st.ActionAuthorizations, receipt)
 		default:
 			return st, fmt.Errorf("unknown event type %s", ev.Type)
 		}

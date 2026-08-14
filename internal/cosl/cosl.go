@@ -283,6 +283,33 @@ func writeREG(b *strings.Builder, value *core.REGReceipt) {
 	b.WriteByte('}')
 }
 
+func writeActionAuthorization(b *strings.Builder, value *core.ActionAuthorizationReceipt) {
+	if value == nil {
+		b.WriteByte('-')
+		return
+	}
+
+	b.WriteString("AA{I=")
+	writeString(b, value.EmergIONID)
+	b.WriteString(";P=")
+	writeString(b, value.Adapter)
+	b.WriteString(";X=")
+	writeString(b, value.Action)
+	b.WriteString(";A=")
+	writeString(b, value.Authority)
+	b.WriteString(";Z=")
+	if value.Authorized {
+		writeString(b, "true")
+	} else {
+		writeString(b, "false")
+	}
+	b.WriteString(";R=")
+	writeString(b, value.Reason)
+	b.WriteString(";T=")
+	writeTime(b, value.At)
+	b.WriteByte('}')
+}
+
 func native(e core.Event, includeHash bool) string {
 	var b strings.Builder
 
@@ -308,6 +335,10 @@ func native(e core.Event, includeHash bool) string {
 	writeDecision(&b, e.Decision)
 	b.WriteString(";R=")
 	writeREG(&b, e.REG)
+	if e.ActionAuthorization != nil {
+		b.WriteString(";Q=")
+		writeActionAuthorization(&b, e.ActionAuthorization)
+	}
 	b.WriteByte('}')
 
 	return b.String()
@@ -1056,6 +1087,85 @@ func (p *parser) regValue() (*core.REGReceipt, error) {
 	}, nil
 }
 
+func (p *parser) actionAuthorizationValue() (*core.ActionAuthorizationReceipt, error) {
+	if strings.HasPrefix(p.s[p.i:], "-") {
+		p.i++
+		return nil, nil
+	}
+
+	if err := p.take("AA{I="); err != nil {
+		return nil, err
+	}
+	id, err := p.stringValue()
+	if err != nil {
+		return nil, err
+	}
+	if err := p.take(";P="); err != nil {
+		return nil, err
+	}
+	adapter, err := p.stringValue()
+	if err != nil {
+		return nil, err
+	}
+	if err := p.take(";X="); err != nil {
+		return nil, err
+	}
+	action, err := p.stringValue()
+	if err != nil {
+		return nil, err
+	}
+	if err := p.take(";A="); err != nil {
+		return nil, err
+	}
+	authority, err := p.stringValue()
+	if err != nil {
+		return nil, err
+	}
+	if err := p.take(";Z="); err != nil {
+		return nil, err
+	}
+	authorizedValue, err := p.stringValue()
+	if err != nil {
+		return nil, err
+	}
+	var authorized bool
+	switch authorizedValue {
+	case "true":
+		authorized = true
+	case "false":
+		authorized = false
+	default:
+		return nil, fmt.Errorf("invalid action authorization value %q", authorizedValue)
+	}
+	if err := p.take(";R="); err != nil {
+		return nil, err
+	}
+	reason, err := p.stringValue()
+	if err != nil {
+		return nil, err
+	}
+	if err := p.take(";T="); err != nil {
+		return nil, err
+	}
+	at, err := p.timeValue()
+	if err != nil {
+		return nil, err
+	}
+	if err := p.take("}"); err != nil {
+		return nil, err
+	}
+
+	return &core.ActionAuthorizationReceipt{
+		EmergIONID: id,
+		Adapter:    adapter,
+		Action:     action,
+		Authority:  authority,
+		Authorized: authorized,
+		Reason:     reason,
+		At:         at,
+	}, nil
+}
+
 func parseNative(value string) (core.Event, error) {
 	p := &parser{s: value}
 
@@ -1115,6 +1225,16 @@ func parseNative(value string) (core.Event, error) {
 	if err != nil {
 		return core.Event{}, err
 	}
+	var actionAuthorization *core.ActionAuthorizationReceipt
+	if strings.HasPrefix(p.s[p.i:], ";Q=") {
+		if err := p.take(";Q="); err != nil {
+			return core.Event{}, err
+		}
+		actionAuthorization, err = p.actionAuthorizationValue()
+		if err != nil {
+			return core.Event{}, err
+		}
+	}
 	if err := p.take("}"); err != nil {
 		return core.Event{}, err
 	}
@@ -1123,14 +1243,15 @@ func parseNative(value string) (core.Event, error) {
 	}
 
 	return core.Event{
-		Type:     eventType,
-		ID:       id,
-		At:       at,
-		EmergION: emergion,
-		Decision: decision,
-		REG:      reg,
-		PrevHash: prevHash,
-		SelfHash: selfHash,
+		Type:                eventType,
+		ID:                  id,
+		At:                  at,
+		EmergION:            emergion,
+		Decision:            decision,
+		REG:                 reg,
+		ActionAuthorization: actionAuthorization,
+		PrevHash:            prevHash,
+		SelfHash:            selfHash,
 	}, nil
 }
 
