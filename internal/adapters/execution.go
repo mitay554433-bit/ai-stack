@@ -16,11 +16,15 @@ type ExecutionRequest struct {
 }
 
 type ExecutionResult struct {
-	Adapter   string `json:"adapter"`
-	Action    string `json:"action"`
-	Succeeded bool   `json:"succeeded"`
-	Output    string `json:"output,omitempty"`
-	Error     string `json:"error,omitempty"`
+	EmergIONID      string `json:"emergion"`
+	SourceHash      string `json:"source_hash"`
+	AuthorizationID string `json:"authorization,omitempty"`
+	Authority       string `json:"authority"`
+	Adapter         string `json:"adapter"`
+	Action          string `json:"action"`
+	Succeeded       bool   `json:"succeeded"`
+	Output          string `json:"output,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 type Executor interface {

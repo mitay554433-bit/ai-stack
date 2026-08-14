@@ -17,10 +17,7 @@ type LocalGemmaExecutor struct {
 func (e LocalGemmaExecutor) Execute(
 	request ExecutionRequest,
 ) (ExecutionResult, error) {
-	result := ExecutionResult{
-		Adapter: request.Adapter,
-		Action:  request.Action,
-	}
+	result := BindExecutionResult(request, ExecutionResult{})
 
 	if request.Adapter != "LOCAL_GEMMA" {
 		err := fmt.Errorf(
