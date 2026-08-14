@@ -236,6 +236,33 @@ func main() {
 			fail(fmt.Errorf("EmergION %q not found", args[1]))
 		}
 		fmt.Print(em.Symbolic())
+	case "actions":
+		if len(args) < 2 {
+			fail(fmt.Errorf("actions requires a REG-accepted EmergION id"))
+		}
+
+		st := loadState(s)
+		em, ok := st.Accepted[args[1]]
+		if !ok {
+			fail(fmt.Errorf("EmergION %q is not REG-accepted", args[1]))
+		}
+
+		var facets []string
+		if em.EVO.Metadata != nil {
+			facets = append(facets, em.EVO.Metadata.Facets...)
+		}
+
+		actions := adapters.DeriveActionCandidates(
+			facets,
+			em.CAP,
+			gemma.Validate() == nil,
+		)
+
+		printJSON(map[string]any{
+			"emergion": em.IDN,
+			"state":    em.STA,
+			"actions":  actions,
+		})
 	case "render":
 		out := *output
 		if len(args) > 1 {
@@ -294,6 +321,7 @@ Commands:
   resume <held-id> [why]       HUMAN_FINAL resume of a held EmergION back to GOV
   status                       CPU and FIELD metrics
   symbolic <id>                print native symbolic EmergION representation
+  actions <id>                 derive read-only bounded actions from REG-accepted state
   render [directory]           static JSON and HTML FIELD projection
   verify                       verify chain/evidence and remove orphan objects
   adapters                     show bounded capability adapters
