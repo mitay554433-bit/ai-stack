@@ -223,10 +223,25 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 		return Result{}, fmt.Errorf("Gemma failed: %w: %s", err, trim(stderr.String(), 500))
 	}
 	res, err := parseResult(stdout.String())
-	if err != nil {
-		return Result{}, fmt.Errorf("Gemma output invalid: %w; output=%s", err, trim(stdout.String(), 500))
+	if err == nil {
+		return res, nil
 	}
-	return res, nil
+
+	if alt, altErr := parseResult(stderr.String()); altErr == nil {
+		return alt, nil
+	}
+
+	combined := stdout.String() + "\n" + stderr.String()
+	if alt, altErr := parseResult(combined); altErr == nil {
+		return alt, nil
+	}
+
+	return Result{}, fmt.Errorf(
+		"Gemma output invalid: %w; stdout=%s; stderr=%s",
+		err,
+		trim(stdout.String(), 500),
+		trim(stderr.String(), 500),
+	)
 }
 
 func buildPrompt(name, content, governedState string) string {
