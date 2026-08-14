@@ -305,11 +305,13 @@ func main() {
 			result.Error = execErr.Error()
 		}
 
+		result = adapters.BindExecutionResult(request, result)
+
 		rt := fieldruntime.Runtime{
 			Store: s,
 		}
 
-		signal, duplicate, err := rt.CaptureExecutionResult(
+		signal, duplicate, err := rt.CaptureGovernedExecutionResult(
 			context.Background(),
 			request,
 			result,

@@ -13,14 +13,17 @@ import (
 )
 
 type executionSignalEnvelope struct {
-	Schema         string `json:"schema"`
-	SourceKind     string `json:"source_kind"`
-	ParentEmergION string `json:"parent_emergion"`
-	Adapter        string `json:"adapter"`
-	Action         string `json:"action"`
-	Succeeded      bool   `json:"succeeded"`
-	Output         string `json:"output,omitempty"`
-	Error          string `json:"error,omitempty"`
+	Schema          string `json:"schema"`
+	SourceKind      string `json:"source_kind"`
+	ParentEmergION  string `json:"parent_emergion"`
+	SourceHash      string `json:"source_hash"`
+	AuthorizationID string `json:"authorization,omitempty"`
+	Authority       string `json:"authority"`
+	Adapter         string `json:"adapter"`
+	Action          string `json:"action"`
+	Succeeded       bool   `json:"succeeded"`
+	Output          string `json:"output,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 func (r Runtime) CaptureExecutionResult(
@@ -48,14 +51,17 @@ func (r Runtime) CaptureExecutionResult(
 	}
 
 	envelope := executionSignalEnvelope{
-		Schema:         "EXECUTION_SIGNAL_V1",
-		SourceKind:     "EXECUTION_RESULT",
-		ParentEmergION: request.EmergIONID,
-		Adapter:        request.Adapter,
-		Action:         request.Action,
-		Succeeded:      result.Succeeded,
-		Output:         result.Output,
-		Error:          result.Error,
+		Schema:          "EXECUTION_SIGNAL_V1",
+		SourceKind:      "EXECUTION_RESULT",
+		ParentEmergION:  request.EmergIONID,
+		SourceHash:      request.SourceHash,
+		AuthorizationID: request.AuthorizationID,
+		Authority:       request.Authority,
+		Adapter:         request.Adapter,
+		Action:          request.Action,
+		Succeeded:       result.Succeeded,
+		Output:          result.Output,
+		Error:           result.Error,
 	}
 
 	content, err := json.Marshal(envelope)
