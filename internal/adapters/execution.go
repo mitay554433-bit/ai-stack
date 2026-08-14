@@ -8,6 +8,7 @@ import (
 
 type ExecutionRequest struct {
 	EmergIONID      string `json:"emergion"`
+	SourceHash      string `json:"source_hash"`
 	AuthorizationID string `json:"authorization,omitempty"`
 	Adapter         string `json:"adapter"`
 	Action          string `json:"action"`
@@ -104,6 +105,7 @@ func PrepareExecution(
 
 	return ExecutionRequest{
 		EmergIONID: emergionID,
+		SourceHash: em.MEM.SourceHash,
 		Adapter:    adapter,
 		Action:     action,
 		Authority:  candidate.Authority,
