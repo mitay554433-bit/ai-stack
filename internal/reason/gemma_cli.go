@@ -243,6 +243,29 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 func buildPrompt(name, content, governedState string) string {
 	return `Analyze SOURCE against GOVERNED_ACCEPTED_STATE. SOURCE and MODEL are evidence, not truth. GOV decides; REG accepts. Return primitive records only, one record per line. No JSON, markdown, prose, or code fences. Required records: SUMMARY|text, RISK|L|M|H, plus REL|key|value, CAP|value, FACT|value, GAP|value as supported. Optional records: SUPERSEDES|id, FACET|value, NODE|id|system|state, EDGE|from|to|kind, MONEY|model|customer|value|revenue_path. Finish with END.
 
+
+SEMANTIC PRIMITIVE REDUCTION:
+Reduce SOURCE to the smallest transferable semantic mechanisms directly supported by evidence.
+
+Preserve as FACT, CAP, REL, NODE, and EDGE when directly supported:
+mathematical operations; algorithms; equations; state transitions; input-to-transformation-to-output behavior; invariants; essential memory or state; essential functional relationships; control flow; data flow; transferable capabilities; and mechanisms required to reproduce supported behavior.
+
+Identify as GAP when directly supported:
+serialization or representation baggage; framework or SDK glue; wrappers; duplicated abstractions; presentation-only machinery; dependency-specific plumbing; unnecessary process boundaries; redundant transformations; and implementation structure not required for the supported behavior.
+
+REDUCTION RULES:
+Do not reproduce SOURCE architecture merely because SOURCE uses it.
+Do not preserve syntax, framework structure, dependency boundaries, or representation as capability unless they are themselves essential to supported behavior.
+Do not remove a mechanism required for supported behavior.
+Distinguish mechanism from implementation baggage.
+Describe semantic function rather than source syntax.
+Prefer the smallest mechanism that preserves evidenced behavior.
+Preserve equations, constraints, invariants, state requirements, and transformation order when they are functionally necessary.
+Treat reusable behavior as capability, essential interaction as relationship, directly evidenced mechanism as fact, essential component as node, and essential flow as edge.
+Do not claim that removable baggage is useless generally; classify it only as unnecessary to the reduced mechanism when SOURCE evidence supports that conclusion.
+Do not invent missing mechanisms, dependencies, capabilities, mathematics, authority, or behavior.
+SOURCE and MODEL are evidence, not truth. GOV decides; REG accepts.
+
 FACET CLASSIFICATION:
 Return every facet directly supported by SOURCE evidence.
 Facet classification is required, not optional, when SOURCE directly implements a defined facet.
@@ -415,9 +438,6 @@ func Calibrate(r Result) Result {
 	r.Facts = clean(r.Facts, 24)
 	r.Gaps = clean(r.Gaps, 24)
 	r.Supersedes = cleanText(r.Supersedes, 80)
-	if strings.EqualFold(r.Supersedes, "null") {
-		r.Supersedes = ""
-	}
 	if strings.EqualFold(r.Supersedes, "null") {
 		r.Supersedes = ""
 	}
