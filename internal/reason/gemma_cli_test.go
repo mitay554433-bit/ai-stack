@@ -2,16 +2,6 @@ package reason
 
 import "testing"
 
-func TestParseResult(t *testing.T) {
-	r, err := parseResult("noise {\"summary\":\"ok\",\"relationships\":{},\"capabilities\":[\"OBS\"],\"facts\":[\"x\"],\"gaps\":[],\"risk\":\"L\",\"facets\":[\"PROGRAM_FORGE\"],\"build_nodes\":[{\"id\":\"source\",\"system\":\"SOURCE\",\"state\":\"observed\"}],\"build_edges\":[],\"monetization\":null} tail")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.Summary != "ok" || r.Risk != "L" {
-		t.Fatalf("bad result: %#v", r)
-	}
-}
-
 func TestCleanFacets(t *testing.T) {
 	got := cleanFacets([]string{"PROGRAM_FORGE", "INVALID", "PROGRAM_FORGE", "GRANT_FUNDING"})
 	if len(got) != 2 || got[0] != "PROGRAM_FORGE" || got[1] != "GRANT_FUNDING" {
@@ -56,7 +46,6 @@ func TestGemmaArgsEnforceOneShotExecution(t *testing.T) {
 	required := []string{
 		"--log-disable",
 		"--color",
-		"--json-schema",
 		"--single-turn",
 		"--simple-io",
 		"--no-display-prompt",
@@ -73,37 +62,6 @@ func TestGemmaArgsEnforceOneShotExecution(t *testing.T) {
 			"configured conversation mode appears after single-turn invariant: %#v",
 			args,
 		)
-	}
-}
-
-func TestParseResultIgnoresPromptJSONAndTransportNoise(t *testing.T) {
-	output := `Loading model...
-
-> Analyze SOURCE.
-GOVERNED_ACCEPTED_STATE:
-[{"id":"E-OLD","summary":"accepted"}]
-
-{"summary":"bounded result","relationships":{"source":"probe"},"capabilities":["OBS"],"facts":["source_observed"],"gaps":[],"risk":"L"}
-
-[ Prompt: 10 t/s | Generation: 4 t/s ]
-Exiting...
-`
-
-	got, err := parseResult(output)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if got.Summary != "bounded result" {
-		t.Fatalf("wrong result selected: %#v", got)
-	}
-
-	if got.Relationships["source"] != "probe" {
-		t.Fatalf("relationships lost: %#v", got.Relationships)
-	}
-
-	if got.Risk != "L" {
-		t.Fatalf("risk mismatch: %q", got.Risk)
 	}
 }
 

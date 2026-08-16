@@ -3,12 +3,12 @@ package adapters
 import "sort"
 
 type ActionCandidate struct {
-	Adapter            string `json:"adapter"`
-	Action             string `json:"action"`
-	Authority          string `json:"authority"`
-	Enabled            bool   `json:"enabled"`
-	HumanFinalRequired bool   `json:"human_final_required"`
-	SourceFacet        string `json:"source_facet,omitempty"`
+	Adapter            string
+	Action             string
+	Authority          string
+	Enabled            bool
+	HumanFinalRequired bool
+	SourceFacet        string
 }
 
 var facetActions = map[string][]string{

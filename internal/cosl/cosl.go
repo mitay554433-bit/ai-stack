@@ -188,6 +188,10 @@ func writeMetadata(b *strings.Builder, value *core.Metadata) {
 	writeEdges(b, value.BuildEdges)
 	b.WriteString(";O=")
 	writeMonetization(b, value.Monetization)
+	if len(value.FieldObservation) > 0 {
+		b.WriteString(";B=")
+		writeStrings(b, value.FieldObservation)
+	}
 	b.WriteByte('}')
 }
 
@@ -771,19 +775,30 @@ func (p *parser) metadataValue() (*core.Metadata, error) {
 	if err != nil {
 		return nil, err
 	}
+	var fieldObservation []string
+	if strings.HasPrefix(p.s[p.i:], ";B=") {
+		if err := p.take(";B="); err != nil {
+			return nil, err
+		}
+		fieldObservation, err = p.stringsValue()
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err := p.take("}"); err != nil {
 		return nil, err
 	}
 
 	out := &core.Metadata{
-		Topology:     core.Topology(topology),
-		CapturedAt:   capturedAt,
-		AIIntegrated: ai,
-		PromptSchema: prompt,
-		Facets:       facets,
-		BuildNodes:   nodes,
-		BuildEdges:   edges,
-		Monetization: monetization,
+		Topology:         core.Topology(topology),
+		CapturedAt:       capturedAt,
+		AIIntegrated:     ai,
+		PromptSchema:     prompt,
+		Facets:           facets,
+		BuildNodes:       nodes,
+		BuildEdges:       edges,
+		Monetization:     monetization,
+		FieldObservation: fieldObservation,
 	}
 
 	if err := out.Validate(); err != nil {

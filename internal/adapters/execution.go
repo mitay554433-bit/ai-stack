@@ -7,24 +7,24 @@ import (
 )
 
 type ExecutionRequest struct {
-	EmergIONID      string `json:"emergion"`
-	SourceHash      string `json:"source_hash"`
-	AuthorizationID string `json:"authorization,omitempty"`
-	Adapter         string `json:"adapter"`
-	Action          string `json:"action"`
-	Authority       string `json:"authority"`
+	EmergIONID      string
+	SourceHash      string
+	AuthorizationID string
+	Adapter         string
+	Action          string
+	Authority       string
 }
 
 type ExecutionResult struct {
-	EmergIONID      string `json:"emergion"`
-	SourceHash      string `json:"source_hash"`
-	AuthorizationID string `json:"authorization,omitempty"`
-	Authority       string `json:"authority"`
-	Adapter         string `json:"adapter"`
-	Action          string `json:"action"`
-	Succeeded       bool   `json:"succeeded"`
-	Output          string `json:"output,omitempty"`
-	Error           string `json:"error,omitempty"`
+	EmergIONID      string
+	SourceHash      string
+	AuthorizationID string
+	Authority       string
+	Adapter         string
+	Action          string
+	Succeeded       bool
+	Output          string
+	Error           string
 }
 
 type Executor interface {

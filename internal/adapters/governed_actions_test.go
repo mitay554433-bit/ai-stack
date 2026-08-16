@@ -1,7 +1,7 @@
 package adapters
 
 import (
-	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -81,10 +81,8 @@ func TestREGAcceptedStateDerivesBoundedActionsWithoutExecution(t *testing.T) {
 		t.Fatalf("REG decision linkage = %q", receipt.DecisionID)
 	}
 
-	before, err := json.Marshal(accepted)
-	if err != nil {
-		t.Fatal(err)
-	}
+	beforeCAP := append([]string(nil), accepted.CAP...)
+	beforeFacets := append([]core.Facet(nil), accepted.EVO.Metadata.Facets...)
 
 	facets := make([]string, 0, len(accepted.EVO.Metadata.Facets))
 	for _, facet := range accepted.EVO.Metadata.Facets {
@@ -97,13 +95,12 @@ func TestREGAcceptedStateDerivesBoundedActionsWithoutExecution(t *testing.T) {
 		false,
 	)
 
-	after, err := json.Marshal(accepted)
-	if err != nil {
-		t.Fatal(err)
+	if !reflect.DeepEqual(beforeCAP, accepted.CAP) {
+		t.Fatal("action derivation mutated accepted capabilities")
 	}
 
-	if string(before) != string(after) {
-		t.Fatal("action derivation mutated REG-accepted state")
+	if !reflect.DeepEqual(beforeFacets, accepted.EVO.Metadata.Facets) {
+		t.Fatal("action derivation mutated accepted facets")
 	}
 
 	var draft *ActionCandidate

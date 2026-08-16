@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -43,58 +42,71 @@ type Runtime struct {
 	ReturnedPredecessor string
 }
 
-type governedProjection struct {
-	ID            string            `json:"id"`
-	Summary       string            `json:"summary"`
-	Capabilities  []string          `json:"capabilities,omitempty"`
-	Relationships map[string]string `json:"relationships,omitempty"`
-	Topology      core.Topology     `json:"topology,omitempty"`
-}
-
-func (r Runtime) governedStateContext() (string, error) {
+func (r Runtime) governedStateContext() (core.State, string, error) {
 	events, err := r.Store.Events()
 	if err != nil {
-		return "", err
-	}
-	st, err := livefield.Rebuild(events)
-	if err != nil {
-		return "", err
-	}
-	items := make([]governedProjection, 0, len(st.Accepted))
-	for _, em := range st.Accepted {
-		item := governedProjection{
-			ID:            em.IDN,
-			Summary:       em.MEM.Summary,
-			Capabilities:  em.CAP,
-			Relationships: em.REL,
-		}
-		if em.EVO.Metadata != nil {
-			item.Topology = em.EVO.Metadata.Topology
-		}
-		items = append(items, item)
-	}
-	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
-	if len(items) == 0 {
-		return "", nil
-	}
-	bounded := make([]governedProjection, 0, len(items))
-	for _, item := range items {
-		candidate := append(bounded, item)
-		b, err := json.Marshal(candidate)
-		if err != nil {
-			return "", err
-		}
-		if len(b) > 12000 {
-			break
-		}
-		bounded = candidate
+		return core.State{}, "", err
 	}
 
-	b, err := json.Marshal(bounded)
+	st, err := livefield.Rebuild(events)
 	if err != nil {
-		return "", err
+		return core.State{}, "", err
 	}
-	return string(b), nil
+
+	ids := make([]string, 0, len(st.Accepted))
+	for id := range st.Accepted {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	var b strings.Builder
+
+	write := func(key, value string) bool {
+		record := fmt.Sprintf("%s=%d:%s\n", key, len(value), value)
+		if b.Len()+len(record) > 12000 {
+			return false
+		}
+		b.WriteString(record)
+		return true
+	}
+
+	for _, id := range ids {
+		em := st.Accepted[id]
+
+		if !write("ID", em.IDN) || !write("SUMMARY", em.MEM.Summary) {
+			break
+		}
+
+		for _, capability := range em.CAP {
+			if !write("CAP", capability) {
+				return st, b.String(), nil
+			}
+		}
+
+		keys := make([]string, 0, len(em.REL))
+		for key := range em.REL {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+
+		for _, key := range keys {
+			if !write("REL_KEY", key) || !write("REL_VALUE", em.REL[key]) {
+				return st, b.String(), nil
+			}
+		}
+
+		if em.EVO.Metadata != nil {
+			if !write("TOPOLOGY", string(em.EVO.Metadata.Topology)) {
+				return st, b.String(), nil
+			}
+		}
+
+		if !write("END", em.IDN) {
+			break
+		}
+	}
+
+	return st, b.String(), nil
 }
 
 func coverage(em *core.EmergION, governedState string) error {
@@ -331,6 +343,103 @@ func runtimeDerivedRelationship(key string) bool {
 	return key == "protector" || key == "protector_gate"
 }
 
+func deriveFieldDelta(
+	accepted map[string]core.EmergION,
+	analysis reason.Result,
+) []string {
+	if len(accepted) == 0 {
+		return []string{"FIELD_EMPTY"}
+	}
+
+	knownCaps := map[string]bool{}
+	knownRelationships := map[string]map[string]bool{}
+	knownFacets := map[string]bool{}
+
+	for _, em := range accepted {
+		for capability := range stringSet(em.CAP) {
+			knownCaps[capability] = true
+		}
+
+		for key, value := range em.REL {
+			if runtimeDerivedRelationship(key) {
+				continue
+			}
+
+			if knownRelationships[key] == nil {
+				knownRelationships[key] = map[string]bool{}
+			}
+			knownRelationships[key][value] = true
+		}
+
+		if em.EVO.Metadata != nil {
+			for _, facet := range em.EVO.Metadata.Facets {
+				value := strings.TrimSpace(string(facet))
+				if value != "" {
+					knownFacets[value] = true
+				}
+			}
+		}
+	}
+
+	var delta []string
+
+	caps := make([]string, 0, len(analysis.Capabilities))
+	for capability := range stringSet(analysis.Capabilities) {
+		caps = append(caps, capability)
+	}
+	sort.Strings(caps)
+
+	for _, capability := range caps {
+		if knownCaps[capability] {
+			delta = append(delta, "FIELD_CAP_KNOWN:"+capability)
+		} else {
+			delta = append(delta, "FIELD_CAP_NOVEL:"+capability)
+		}
+	}
+
+	keys := make([]string, 0, len(analysis.Relationships))
+	for key := range analysis.Relationships {
+		if runtimeDerivedRelationship(key) {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		value := analysis.Relationships[key]
+		knownValues, exists := knownRelationships[key]
+
+		switch {
+		case !exists:
+			delta = append(delta, "FIELD_REL_NOVEL:"+key)
+		case knownValues[value]:
+			delta = append(delta, "FIELD_REL_MATCH:"+key)
+		default:
+			delta = append(delta, "FIELD_REL_VARIANT:"+key)
+		}
+	}
+
+	facets := make([]string, 0, len(analysis.Facets))
+	for facet := range stringSet(analysis.Facets) {
+		facets = append(facets, facet)
+	}
+	sort.Strings(facets)
+
+	for _, facet := range facets {
+		if knownFacets[facet] {
+			delta = append(delta, "FIELD_FACET_KNOWN:"+facet)
+		} else {
+			delta = append(delta, "FIELD_FACET_NOVEL:"+facet)
+		}
+	}
+
+	if len(delta) == 0 {
+		return []string{"FIELD_NO_STRUCTURAL_OBSERVATION"}
+	}
+
+	return delta
+}
 func deriveDelta(previous core.EmergION, analysis reason.Result) []string {
 	var delta []string
 
@@ -480,6 +589,7 @@ func (r Runtime) validateLineage(analysis *reason.Result) error {
 func (r Runtime) recapture(
 	ctx context.Context,
 	governedState string,
+	fieldObservation []string,
 	cause error,
 ) (core.EmergION, bool, error) {
 	divergence, ok := cause.(*pivot.DivergenceError)
@@ -497,6 +607,18 @@ func (r Runtime) recapture(
 	}
 
 	em := divergence.EmergION
+	if em.EVO.Metadata == nil {
+		em.EVO.Metadata = &core.Metadata{
+			Topology:     core.TopologyDodecahedronV1,
+			CapturedAt:   time.Now().UTC(),
+			AIIntegrated: r.Reasoner != nil && r.Reasoner.Name() != "heuristic",
+			PromptSchema: "EMERGER_LOGICAL_V2",
+		}
+	}
+	em.EVO.Metadata.FieldObservation = append(
+		[]string(nil),
+		fieldObservation...,
+	)
 	em.MEM.SourceHash = evidence.Hash
 	em.MEM.Codec = evidence.Codec
 	em.MEM.Bytes = evidence.Bytes
@@ -567,34 +689,72 @@ func (r Runtime) recapture(
 }
 
 func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool) (core.EmergION, bool, error) {
-	if r.Store == nil || r.Reasoner == nil {
-		return core.EmergION{}, false, fmt.Errorf("runtime not configured")
-	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return core.EmergION{}, false, err
 	}
+
+	em, duplicate, err := r.captureBytes(
+		ctx,
+		filepath.Base(path),
+		b,
+		"local_dropzone",
+	)
+	if err != nil {
+		return em, duplicate, err
+	}
+
+	if removeOnSuccess {
+		if err := os.Remove(path); err != nil {
+			return em, duplicate, fmt.Errorf(
+				"captured but could not clear dropzone: %w",
+				err,
+			)
+		}
+	}
+
+	return em, duplicate, nil
+}
+
+func (r Runtime) captureBytes(
+	ctx context.Context,
+	name string,
+	b []byte,
+	provenance string,
+) (core.EmergION, bool, error) {
+	if r.Store == nil || r.Reasoner == nil {
+		return core.EmergION{}, false, fmt.Errorf("runtime not configured")
+	}
 	if len(b) == 0 {
 		return core.EmergION{}, false, fmt.Errorf("empty source")
 	}
+
 	h := store.Hash(b)
 	if existing, ok, err := r.Store.FindBySourceHash(h); err != nil {
 		return core.EmergION{}, false, err
 	} else if ok {
-		if removeOnSuccess {
-			_ = os.Remove(path)
-		}
 		return existing, true, nil
 	}
-	governedState, err := r.governedStateContext()
+
+	boundary, governedState, err := r.governedStateContext()
 	if err != nil {
-		return core.EmergION{}, false, fmt.Errorf("living state projection failed: %w", err)
+		return core.EmergION{}, false, fmt.Errorf(
+			"living state projection failed: %w",
+			err,
+		)
 	}
-	analysis, err := r.Reasoner.Analyze(ctx, reason.Input{Name: filepath.Base(path), Content: b, GovernedState: governedState})
+
+	analysis, err := r.Reasoner.Analyze(ctx, reason.Input{
+		Name:          name,
+		Content:       b,
+		GovernedState: governedState,
+	})
 	if err != nil {
 		return core.EmergION{}, false, err
 	}
+
 	analysis = reason.Calibrate(analysis)
+	fieldDelta := deriveFieldDelta(boundary.Accepted, analysis)
 	if err := r.validateLineage(&analysis); err != nil {
 		return core.EmergION{}, false, err
 	}
@@ -603,23 +763,42 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 	if err != nil {
 		return core.EmergION{}, false, err
 	}
-	// Use a fixed-result reasoner so the source is analyzed exactly once.
-	fr := fixedReasoner{name: r.Reasoner.Name(), version: r.Reasoner.Version(ctx), result: analysis}
-	em, err := (emerger.Engine{Reasoner: fr}).Emerge(ctx, reason.Input{Name: filepath.Base(path), Content: b}, emerger.Evidence{Hash: ev.Hash, Bytes: ev.Bytes, Stored: ev.Stored, Codec: ev.Codec, Provenance: "local_dropzone"})
+
+	fr := fixedReasoner{
+		name:    r.Reasoner.Name(),
+		version: r.Reasoner.Version(ctx),
+		result:  analysis,
+	}
+
+	em, err := (emerger.Engine{Reasoner: fr}).Emerge(
+		ctx,
+		reason.Input{Name: name, Content: b},
+		emerger.Evidence{
+			Hash:       ev.Hash,
+			Bytes:      ev.Bytes,
+			Stored:     ev.Stored,
+			Codec:      ev.Codec,
+			Provenance: provenance,
+		},
+	)
 	if err != nil {
 		var divergence *pivot.DivergenceError
 		if errors.As(err, &divergence) {
-			// The original source did not cross EmergER. Its preserved
-			// evidence is therefore orphaned; RECAPTURE will preserve
-			// the reciprocal divergence as the next evidence object.
 			_, _ = r.Store.PruneOrphans()
-			return r.recapture(ctx, governedState, err)
+			return r.recapture(ctx, governedState, fieldDelta, err)
 		}
 
 		_, _ = r.Store.PruneOrphans()
 		return core.EmergION{}, false, err
 	}
 
+	if em.EVO.Metadata == nil {
+		return core.EmergION{}, false, fmt.Errorf("emergion metadata missing")
+	}
+	em.EVO.Metadata.FieldObservation = append(
+		[]string(nil),
+		fieldDelta...,
+	)
 	if em.REL == nil {
 		em.REL = map[string]string{}
 	}
@@ -634,23 +813,19 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 			"CANDIDATE_COVERAGE_CLAIM",
 			"BRIDGEGAP_OBSERVATION",
 			"NO_UNRESOLVED_BRIDGEGAP",
-			func() error {
-				return coverageErr
-			},
+			func() error { return coverageErr },
 		)
 
 		_, _ = r.Store.PruneOrphans()
-
 		if pivotErr != nil {
-			return r.recapture(ctx, governedState, pivotErr)
+			return r.recapture(ctx, governedState, fieldDelta, pivotErr)
 		}
-
 		return em, false, coverageErr
 	}
 
 	if err := protector(&em); err != nil {
 		_, _ = r.Store.PruneOrphans()
-		return r.recapture(ctx, governedState, err)
+		return r.recapture(ctx, governedState, fieldDelta, err)
 	}
 
 	_, err = pivot.Observe(
@@ -658,12 +833,10 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		"CANDIDATE_CLAIM",
 		"CANDIDATE_OBSERVATION",
 		"POST_PROTECTOR_CANDIDATE_INTEGRITY",
-		func() error {
-			return recoilIntegrity(em)
-		},
+		func() error { return recoilIntegrity(em) },
 	)
 	if err != nil {
-		return r.recapture(ctx, governedState, err)
+		return r.recapture(ctx, governedState, fieldDelta, err)
 	}
 	em.VAL.Recoil = true
 
@@ -672,13 +845,12 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		"CANDIDATE_EVIDENCE_CLAIM",
 		"PRESERVED_EVIDENCE_OBSERVATION",
 		"EVIDENCE_CONTINUITY",
-		func() error {
-			return wvcEvidenceContinuity(r.Store, em)
-		},
+		func() error { return wvcEvidenceContinuity(r.Store, em) },
 	)
 	if err != nil {
-		return r.recapture(ctx, governedState, err)
+		return r.recapture(ctx, governedState, fieldDelta, err)
 	}
+
 	em.VAL.WVC = true
 	em.STA = core.StateAtGOV
 
@@ -686,11 +858,7 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 		_, _ = r.Store.PruneOrphans()
 		return core.EmergION{}, false, err
 	}
-	if removeOnSuccess {
-		if err = os.Remove(path); err != nil {
-			return em, false, fmt.Errorf("captured but could not clear dropzone: %w", err)
-		}
-	}
+
 	return em, false, nil
 }
 
@@ -704,6 +872,146 @@ func (f fixedReasoner) Analyze(context.Context, reason.Input) (reason.Result, er
 }
 func (f fixedReasoner) Name() string                   { return f.name }
 func (f fixedReasoner) Version(context.Context) string { return f.version }
+
+func executionAlreadyObserved(
+	st core.State,
+	parentEmergION string,
+	adapter string,
+	action string,
+) bool {
+	groups := []map[string]core.EmergION{
+		st.AtGOV,
+		st.Approved,
+		st.Accepted,
+		st.Held,
+		st.Rejected,
+		st.Returned,
+	}
+
+	for _, group := range groups {
+		for _, em := range group {
+			if em.REL["source_kind"] != "EXECUTION_RESULT" {
+				continue
+			}
+			if em.REL["parent_emergion"] != parentEmergION {
+				continue
+			}
+			if em.REL["adapter"] != adapter {
+				continue
+			}
+			if em.REL["action"] != action {
+				continue
+			}
+			return true
+		}
+	}
+
+	return false
+}
+
+func (r Runtime) ExecuteOneSafeAction(
+	ctx context.Context,
+	gemma reason.GemmaCLI,
+) (core.EmergION, bool, error) {
+	if r.Store == nil {
+		return core.EmergION{}, false, fmt.Errorf("runtime store not configured")
+	}
+
+	if err := gemma.Validate(); err != nil {
+		return core.EmergION{}, false, err
+	}
+
+	events, err := r.Store.Events()
+	if err != nil {
+		return core.EmergION{}, false, err
+	}
+
+	st, err := livefield.Rebuild(events)
+	if err != nil {
+		return core.EmergION{}, false, err
+	}
+
+	ids := make([]string, 0, len(st.Accepted))
+	for id := range st.Accepted {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	for _, id := range ids {
+		em := st.Accepted[id]
+
+		var facets []string
+		if em.EVO.Metadata != nil {
+			for _, facet := range em.EVO.Metadata.Facets {
+				facets = append(facets, string(facet))
+			}
+		}
+
+		for _, candidate := range adapters.DeriveActionCandidates(
+			facets,
+			em.CAP,
+			true,
+		) {
+			if !candidate.Enabled ||
+				candidate.Authority != "CAP_ONLY" ||
+				candidate.HumanFinalRequired ||
+				candidate.Adapter != "LOCAL_GEMMA" ||
+				candidate.Action != "ANALYZE" {
+				continue
+			}
+
+			if executionAlreadyObserved(
+				st,
+				em.IDN,
+				candidate.Adapter,
+				candidate.Action,
+			) {
+				continue
+			}
+
+			request, err := adapters.PrepareExecution(
+				st,
+				em.IDN,
+				candidate.Adapter,
+				candidate.Action,
+				true,
+			)
+			if err != nil {
+				return core.EmergION{}, false, err
+			}
+
+			executor := adapters.LocalGemmaExecutor{
+				Store: r.Store,
+				Gemma: gemma,
+			}
+
+			result, execErr := executor.Execute(request)
+			if execErr != nil && result.Error == "" {
+				result.Error = execErr.Error()
+			}
+
+			result = adapters.BindExecutionResult(request, result)
+
+			signal, duplicate, err :=
+				r.CaptureGovernedExecutionResult(
+					ctx,
+					request,
+					result,
+				)
+			if err != nil {
+				return core.EmergION{}, false, err
+			}
+
+			if execErr != nil {
+				return signal, !duplicate, execErr
+			}
+
+			return signal, !duplicate, nil
+		}
+	}
+
+	return core.EmergION{}, false, nil
+}
 
 func (r Runtime) Once(ctx context.Context, dropzone string) ([]string, error) {
 	if err := os.MkdirAll(dropzone, 0o700); err != nil {
@@ -748,7 +1056,13 @@ func (r Runtime) Once(ctx context.Context, dropzone string) ([]string, error) {
 	return ids, nil
 }
 
-func (r Runtime) Run(ctx context.Context, dropzone string, interval time.Duration, onCapture func(string)) error {
+func (r Runtime) Run(
+	ctx context.Context,
+	dropzone string,
+	interval time.Duration,
+	onCapture func(string),
+	onCycle func(context.Context) error,
+) error {
 	if interval < 250*time.Millisecond {
 		interval = 250 * time.Millisecond
 	}
@@ -759,6 +1073,11 @@ func (r Runtime) Run(ctx context.Context, dropzone string, interval time.Duratio
 	if onCapture != nil {
 		for _, id := range ids {
 			onCapture(id)
+		}
+	}
+	if onCycle != nil {
+		if err := onCycle(ctx); err != nil {
+			return err
 		}
 	}
 	t := time.NewTicker(interval)
@@ -775,6 +1094,11 @@ func (r Runtime) Run(ctx context.Context, dropzone string, interval time.Duratio
 			if onCapture != nil {
 				for _, id := range ids {
 					onCapture(id)
+				}
+			}
+			if onCycle != nil {
+				if err := onCycle(ctx); err != nil {
+					return err
 				}
 			}
 		}

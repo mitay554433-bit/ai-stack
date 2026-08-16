@@ -1,10 +1,10 @@
 package adapters
 
 type Adapter struct {
-	ID           string   `json:"id"`
-	Capabilities []string `json:"capabilities"`
-	Enabled      bool     `json:"enabled"`
-	Authority    string   `json:"authority"`
+	ID           string
+	Capabilities []string
+	Enabled      bool
+	Authority    string
 }
 
 func Catalog(localGemma bool) []Adapter {

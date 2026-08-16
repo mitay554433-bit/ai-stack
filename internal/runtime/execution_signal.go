@@ -2,29 +2,13 @@ package runtime
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
+	"strings"
 
 	"emergion-sovereign-runtime/internal/adapters"
 	"emergion-sovereign-runtime/internal/core"
 	"emergion-sovereign-runtime/internal/reason"
 )
-
-type executionSignalEnvelope struct {
-	Schema          string `json:"schema"`
-	SourceKind      string `json:"source_kind"`
-	ParentEmergION  string `json:"parent_emergion"`
-	SourceHash      string `json:"source_hash"`
-	AuthorizationID string `json:"authorization,omitempty"`
-	Authority       string `json:"authority"`
-	Adapter         string `json:"adapter"`
-	Action          string `json:"action"`
-	Succeeded       bool   `json:"succeeded"`
-	Output          string `json:"output,omitempty"`
-	Error           string `json:"error,omitempty"`
-}
 
 func (r Runtime) CaptureExecutionResult(
 	ctx context.Context,
@@ -50,54 +34,24 @@ func (r Runtime) CaptureExecutionResult(
 		)
 	}
 
-	envelope := executionSignalEnvelope{
-		Schema:          "EXECUTION_SIGNAL_V1",
-		SourceKind:      "EXECUTION_RESULT",
-		ParentEmergION:  request.EmergIONID,
-		SourceHash:      request.SourceHash,
-		AuthorizationID: request.AuthorizationID,
-		Authority:       request.Authority,
-		Adapter:         request.Adapter,
-		Action:          request.Action,
-		Succeeded:       result.Succeeded,
-		Output:          result.Output,
-		Error:           result.Error,
+	var content strings.Builder
+	writeField := func(key, value string) {
+		fmt.Fprintf(&content, "%s=%d:", key, len(value))
+		content.WriteString(value)
+		content.WriteByte('\n')
 	}
 
-	content, err := json.Marshal(envelope)
-	if err != nil {
-		return core.EmergION{}, false, err
-	}
-
-	signalDir := filepath.Join(r.Store.Root, "execution-signals")
-	if err := os.MkdirAll(signalDir, 0o700); err != nil {
-		return core.EmergION{}, false, err
-	}
-
-	f, err := os.CreateTemp(signalDir, ".signal-*")
-	if err != nil {
-		return core.EmergION{}, false, err
-	}
-
-	path := f.Name()
-	remove := true
-	defer func() {
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-
-	if _, err := f.Write(content); err != nil {
-		_ = f.Close()
-		return core.EmergION{}, false, err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return core.EmergION{}, false, err
-	}
-	if err := f.Close(); err != nil {
-		return core.EmergION{}, false, err
-	}
+	writeField("SCHEMA", "EXECUTION_SIGNAL_V1")
+	writeField("SOURCE_KIND", "EXECUTION_RESULT")
+	writeField("PARENT_EMERGION", request.EmergIONID)
+	writeField("SOURCE_HASH", request.SourceHash)
+	writeField("AUTHORIZATION", request.AuthorizationID)
+	writeField("AUTHORITY", request.Authority)
+	writeField("ADAPTER", request.Adapter)
+	writeField("ACTION", request.Action)
+	writeField("SUCCEEDED", fmt.Sprintf("%t", result.Succeeded))
+	writeField("OUTPUT", result.Output)
+	writeField("ERROR", result.Error)
 
 	facts := []string{
 		"execution_result_observed",
@@ -132,15 +86,10 @@ func (r Runtime) CaptureExecutionResult(
 		},
 	}
 
-	em, duplicate, err := signalRuntime.Capture(
+	return signalRuntime.captureBytes(
 		ctx,
-		path,
-		true,
+		"execution-result",
+		[]byte(content.String()),
+		"execution_signal",
 	)
-
-	if err == nil {
-		remove = false
-	}
-
-	return em, duplicate, err
 }

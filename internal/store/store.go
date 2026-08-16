@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -189,7 +188,7 @@ func (s *Store) append(kind, subject string, em *core.EmergION, d *core.Decision
 		prev = events[len(events)-1].SelfHash
 	}
 	now := time.Now().UTC()
-	seed, _ := json.Marshal([]any{kind, subject, now.UnixNano(), prev})
+	seed := []byte(fmt.Sprintf("%d:%s|%d:%s|%d|%d:%s", len(kind), kind, len(subject), subject, now.UnixNano(), len(prev), prev))
 	h := sha256.Sum256(seed)
 	e := core.Event{Type: kind, ID: "EV-" + strings.ToUpper(hex.EncodeToString(h[:8])), At: now, EmergION: em, Decision: d, REG: r, ActionAuthorization: q, PrevHash: prev}
 	line, err := cosl.Encode(e)

@@ -9,37 +9,37 @@ type Input struct {
 }
 
 type Result struct {
-	Summary       string            `json:"summary"`
-	Relationships map[string]string `json:"relationships"`
-	Capabilities  []string          `json:"capabilities"`
-	Facts         []string          `json:"facts"`
-	Gaps          []string          `json:"gaps"`
-	Risk          string            `json:"risk"`
-	Supersedes    string            `json:"supersedes"`
-	Delta         []string          `json:"delta"`
-	Facets        []string          `json:"facets"`
-	BuildNodes    []BuildNode       `json:"build_nodes"`
-	BuildEdges    []BuildEdge       `json:"build_edges"`
-	Monetization  *Monetization     `json:"monetization"`
+	Summary       string
+	Relationships map[string]string
+	Capabilities  []string
+	Facts         []string
+	Gaps          []string
+	Risk          string
+	Supersedes    string
+	Delta         []string
+	Facets        []string
+	BuildNodes    []BuildNode
+	BuildEdges    []BuildEdge
+	Monetization  *Monetization
 }
 
 type BuildNode struct {
-	ID     string `json:"id"`
-	System string `json:"system"`
-	State  string `json:"state"`
+	ID     string
+	System string
+	State  string
 }
 
 type BuildEdge struct {
-	From string `json:"from"`
-	To   string `json:"to"`
-	Kind string `json:"kind"`
+	From string
+	To   string
+	Kind string
 }
 
 type Monetization struct {
-	Model       string `json:"model"`
-	Customer    string `json:"customer"`
-	Value       string `json:"value"`
-	RevenuePath string `json:"revenue_path"`
+	Model       string
+	Customer    string
+	Value       string
+	RevenuePath string
 }
 
 type Reasoner interface {

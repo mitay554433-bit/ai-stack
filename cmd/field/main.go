@@ -158,16 +158,58 @@ func main() {
 		if err != nil {
 			fail(err)
 		}
+
 		renderField(s, *output)
-		printJSON(map[string]any{"captured": ids, "dropzone_cleared": true})
+		printJSON(map[string]any{
+			"captured":         ids,
+			"dropzone_cleared": true,
+		})
+
 	case "run":
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		ctx, stop := signal.NotifyContext(
+			context.Background(),
+			os.Interrupt,
+			syscall.SIGTERM,
+		)
 		defer stop()
+
 		rt := fieldruntime.Runtime{Store: s, Reasoner: mkReasoner()}
-		fmt.Println("LIVING_FIELD", filepath.Clean(*dropzone), "reasoner="+*reasonerName)
-		if err := rt.Run(ctx, *dropzone, *poll, func(id string) { renderField(s, *output); fmt.Println(id, "AT_GOV") }); err != nil {
+
+		fmt.Println(
+			"LIVING_FIELD",
+			filepath.Clean(*dropzone),
+			"reasoner="+*reasonerName,
+		)
+
+		if err := rt.Run(
+			ctx,
+			*dropzone,
+			*poll,
+			func(id string) {
+				renderField(s, *output)
+				fmt.Println(id, "AT_GOV")
+			},
+			func(cycleCtx context.Context) error {
+				safeSignal, safeExecuted, err :=
+					rt.ExecuteOneSafeAction(cycleCtx, gemma)
+				if err != nil {
+					return err
+				}
+
+				if safeExecuted {
+					renderField(s, *output)
+					fmt.Println(
+						safeSignal.IDN,
+						"SAFE_ACTION_AT_GOV",
+					)
+				}
+
+				return nil
+			},
+		); err != nil {
 			fail(err)
 		}
+
 	case "decide":
 		if len(args) < 3 {
 			fail(fmt.Errorf("decide <id> <APPROVE|HOLD|REJECT|RETURN> [reason]"))
@@ -265,6 +307,68 @@ func main() {
 			"state":    em.STA,
 			"actions":  actions,
 		})
+	case "authorize":
+		if len(args) < 4 {
+			fail(fmt.Errorf("authorize <emergion-id> <adapter> <action> [reason]"))
+		}
+
+		st := loadState(s)
+		em, ok := st.Accepted[args[1]]
+		if !ok {
+			fail(fmt.Errorf("EmergION %q is not REG-accepted", args[1]))
+		}
+
+		var facets []string
+		if em.EVO.Metadata != nil {
+			for _, facet := range em.EVO.Metadata.Facets {
+				facets = append(facets, string(facet))
+			}
+		}
+
+		derivable := false
+		for _, candidate := range adapters.DeriveActionCandidates(
+			facets,
+			em.CAP,
+			gemma.Validate() == nil,
+		) {
+			if candidate.Adapter == args[2] &&
+				candidate.Action == args[3] {
+				derivable = true
+				break
+			}
+		}
+
+		if !derivable {
+			fail(fmt.Errorf(
+				"action %s:%s is not derivable from accepted EmergION %s",
+				args[2],
+				args[3],
+				em.IDN,
+			))
+		}
+
+		reasonText := ""
+		if len(args) > 4 {
+			reasonText = args[4]
+		}
+
+		receipt := core.ActionAuthorizationReceipt{
+			EmergIONID: em.IDN,
+			Adapter:    args[2],
+			Action:     args[3],
+			Authority:  "HUMAN_FINAL",
+			Authorized: true,
+			Reason:     reasonText,
+			At:         time.Now().UTC(),
+		}
+
+		if _, err := s.SaveActionAuthorization(receipt); err != nil {
+			fail(err)
+		}
+
+		renderField(s, *output)
+		fmt.Println(em.IDN, args[2], args[3], "AUTHORIZED")
+
 	case "execute":
 		if len(args) != 4 {
 			fail(fmt.Errorf("usage: field execute <emergion-id> <adapter> <action>"))
@@ -331,6 +435,35 @@ func main() {
 			fail(execErr)
 		}
 
+	case "safe-action":
+		if len(args) != 1 {
+			fail(fmt.Errorf("usage: field safe-action"))
+		}
+
+		rt := fieldruntime.Runtime{
+			Store: s,
+		}
+
+		signal, executed, err := rt.ExecuteOneSafeAction(
+			context.Background(),
+			gemma,
+		)
+		if err != nil {
+			fail(err)
+		}
+
+		if executed {
+			renderField(s, *output)
+			printJSON(map[string]any{
+				"executed": true,
+				"signal":   signal,
+			})
+		} else {
+			printJSON(map[string]any{
+				"executed": false,
+			})
+		}
+
 	case "render":
 		out := *output
 		if len(args) > 1 {
@@ -390,7 +523,9 @@ Commands:
   status                       CPU and FIELD metrics
   symbolic <id>                print native symbolic EmergION representation
   actions <id>                 derive read-only bounded actions from REG-accepted state
+  authorize <id> <adapter> <action> [why] HUMAN_FINAL authorization for a derivable gated action
   execute <id> <adapter> <action> execute one governed local action and recapture its result
+  safe-action                  execute at most one eligible bounded CAP_ONLY action
   render [directory]           static JSON and HTML FIELD projection
   verify                       verify chain/evidence and remove orphan objects
   adapters                     show bounded capability adapters

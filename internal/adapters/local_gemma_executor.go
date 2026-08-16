@@ -2,7 +2,6 @@ package adapters
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"emergion-sovereign-runtime/internal/reason"
@@ -72,14 +71,8 @@ func (e LocalGemmaExecutor) Execute(
 		return result, err
 	}
 
-	output, err := json.Marshal(analyzed)
-	if err != nil {
-		result.Error = err.Error()
-		return result, err
-	}
-
 	result.Succeeded = true
-	result.Output = string(output)
+	result.Output = reason.FormatResult(analyzed)
 
 	return result, nil
 }

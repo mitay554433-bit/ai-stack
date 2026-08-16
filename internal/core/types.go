@@ -84,19 +84,47 @@ type Topology string
 const TopologyDodecahedronV1 Topology = "DODECAHEDRON_V1"
 
 type Metadata struct {
-	Topology     Topology      `json:"y,omitempty"`
-	CapturedAt   time.Time     `json:"t"`
-	AIIntegrated bool          `json:"a"`
-	PromptSchema string        `json:"p,omitempty"`
-	Facets       []Facet       `json:"f,omitempty"`
-	BuildNodes   []BuildNode   `json:"n,omitempty"`
-	BuildEdges   []BuildEdge   `json:"e,omitempty"`
-	Monetization *Monetization `json:"o,omitempty"`
+	Topology         Topology      `json:"y,omitempty"`
+	CapturedAt       time.Time     `json:"t"`
+	AIIntegrated     bool          `json:"a"`
+	PromptSchema     string        `json:"p,omitempty"`
+	Facets           []Facet       `json:"f,omitempty"`
+	BuildNodes       []BuildNode   `json:"n,omitempty"`
+	BuildEdges       []BuildEdge   `json:"e,omitempty"`
+	Monetization     *Monetization `json:"o,omitempty"`
+	FieldObservation []string      `json:"b,omitempty"`
 }
 
 func (m *Metadata) Validate() error {
 	if m == nil {
 		return nil
+	}
+	seenFieldObservation := map[string]bool{}
+	for _, observation := range m.FieldObservation {
+		observation = strings.TrimSpace(observation)
+		if observation == "" || seenFieldObservation[observation] {
+			return fmt.Errorf("invalid or duplicate field observation %q", observation)
+		}
+
+		valid := observation == "FIELD_EMPTY" ||
+			observation == "FIELD_NO_STRUCTURAL_OBSERVATION" ||
+			strings.HasPrefix(observation, "FIELD_CAP_KNOWN:") ||
+			strings.HasPrefix(observation, "FIELD_CAP_NOVEL:") ||
+			strings.HasPrefix(observation, "FIELD_REL_NOVEL:") ||
+			strings.HasPrefix(observation, "FIELD_REL_MATCH:") ||
+			strings.HasPrefix(observation, "FIELD_REL_VARIANT:") ||
+			strings.HasPrefix(observation, "FIELD_FACET_KNOWN:") ||
+			strings.HasPrefix(observation, "FIELD_FACET_NOVEL:")
+
+		if !valid {
+			return fmt.Errorf("invalid field observation %q", observation)
+		}
+
+		if strings.HasSuffix(observation, ":") {
+			return fmt.Errorf("invalid field observation %q", observation)
+		}
+
+		seenFieldObservation[observation] = true
 	}
 	if m.CapturedAt.IsZero() {
 		return fmt.Errorf("metadata capture timestamp required")

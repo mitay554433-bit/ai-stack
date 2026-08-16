@@ -9,7 +9,6 @@ import (
 	"emergion-sovereign-runtime/internal/reason"
 	"emergion-sovereign-runtime/internal/reg"
 	"emergion-sovereign-runtime/internal/store"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -297,7 +296,7 @@ func TestGovernedStateContextRemainsValidJSON(t *testing.T) {
 
 	r := Runtime{Store: s, Reasoner: reason.Heuristic{}}
 
-	projected, err := r.governedStateContext()
+	_, projected, err := r.governedStateContext()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,13 +305,16 @@ func TestGovernedStateContextRemainsValidJSON(t *testing.T) {
 		t.Fatalf("projection exceeded bound: %d", len(projected))
 	}
 
-	var decoded []governedProjection
-	if err := json.Unmarshal([]byte(projected), &decoded); err != nil {
-		t.Fatalf("projection is invalid JSON: %v", err)
+	if projected == "" {
+		t.Fatal("bounded projection unexpectedly empty")
 	}
 
-	if len(decoded) == 0 {
-		t.Fatal("bounded projection unexpectedly empty")
+	if !strings.Contains(projected, "ID=") {
+		t.Fatal("bounded projection missing native ID record")
+	}
+
+	if !strings.Contains(projected, "SUMMARY=") {
+		t.Fatal("bounded projection missing native SUMMARY record")
 	}
 }
 
@@ -767,6 +769,7 @@ func TestPivotDivergenceReentersNormalAdmission(t *testing.T) {
 	em, duplicate, err := r.recapture(
 		context.Background(),
 		"",
+		nil,
 		cause,
 	)
 	if err == nil {
@@ -847,6 +850,7 @@ func TestRecaptureReturnsTypedContinuationResult(t *testing.T) {
 	em, _, err := r.recapture(
 		context.Background(),
 		"",
+		nil,
 		cause,
 	)
 	if err == nil {
@@ -1362,5 +1366,188 @@ func TestWVCEvidenceContinuityRejectsMetadataMismatch(t *testing.T) {
 				t.Fatal("expected WVC continuity rejection")
 			}
 		})
+	}
+}
+
+func TestDeriveFieldDeltaAgainstAcceptedBoundary(t *testing.T) {
+	accepted := map[string]core.EmergION{
+		"E-KNOWN": {
+			CAP: []string{"OBS", "CMP"},
+			REL: map[string]string{
+				"source_kind": "PROGRAM",
+				"domain":      "runtime",
+			},
+			EVO: core.Evolution{
+				Metadata: &core.Metadata{
+					Facets: []core.Facet{
+						core.FacetProgramForge,
+					},
+				},
+			},
+		},
+	}
+
+	analysis := reason.Result{
+		Capabilities: []string{"CMP", "VLD"},
+		Relationships: map[string]string{
+			"source_kind": "PROGRAM",
+			"domain":      "compiler",
+			"novel_key":   "new",
+		},
+		Facets: []string{
+			"PROGRAM_FORGE",
+			"ANALYTICS_FORECAST",
+		},
+	}
+
+	got := deriveFieldDelta(accepted, analysis)
+
+	want := []string{
+		"FIELD_CAP_KNOWN:CMP",
+		"FIELD_CAP_NOVEL:VLD",
+		"FIELD_REL_VARIANT:domain",
+		"FIELD_REL_NOVEL:novel_key",
+		"FIELD_REL_MATCH:source_kind",
+		"FIELD_FACET_NOVEL:ANALYTICS_FORECAST",
+		"FIELD_FACET_KNOWN:PROGRAM_FORGE",
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("FIELD delta mismatch\nwant: %#v\ngot:  %#v", want, got)
+	}
+}
+
+func TestRecapturePreservesFieldObservation(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store:    s,
+		Reasoner: lineageReasoner{},
+	}
+
+	_, cause := pivot.Observe(
+		"WVC",
+		"SOURCE_IDENTITY_CLAIM",
+		"PRESERVED_EVIDENCE_OBSERVATION",
+		"SOURCE_HASH_MATCH",
+		func() error {
+			return fmt.Errorf("source hash mismatch")
+		},
+	)
+	if cause == nil {
+		t.Fatal("expected pivot divergence")
+	}
+
+	fieldObservation := []string{
+		"FIELD_CAP_KNOWN:CMP",
+		"FIELD_CAP_NOVEL:VLD",
+		"FIELD_REL_VARIANT:domain",
+		"FIELD_FACET_NOVEL:ANALYTICS_FORECAST",
+	}
+
+	em, duplicate, err := r.recapture(
+		context.Background(),
+		"",
+		fieldObservation,
+		cause,
+	)
+	if err == nil {
+		t.Fatal("RECAPTURE must retain original divergence")
+	}
+	if duplicate {
+		t.Fatal("RECAPTURE unexpectedly reported duplicate")
+	}
+
+	if em.EVO.Metadata == nil {
+		t.Fatal("RECAPTURE metadata missing")
+	}
+
+	if !reflect.DeepEqual(
+		em.EVO.Metadata.FieldObservation,
+		fieldObservation,
+	) {
+		t.Fatalf(
+			"RECAPTURE field observation mismatch\nwant: %#v\ngot:  %#v",
+			fieldObservation,
+			em.EVO.Metadata.FieldObservation,
+		)
+	}
+
+	events, eventsErr := s.Events()
+	if eventsErr != nil {
+		t.Fatal(eventsErr)
+	}
+
+	state, rebuildErr := livefield.Rebuild(events)
+	if rebuildErr != nil {
+		t.Fatal(rebuildErr)
+	}
+
+	admitted, ok := state.AtGOV[em.IDN]
+	if !ok {
+		t.Fatalf("RECAPTURE EmergION %s missing from GOV", em.IDN)
+	}
+
+	if admitted.EVO.Metadata == nil {
+		t.Fatal("stored RECAPTURE metadata missing")
+	}
+
+	if !reflect.DeepEqual(
+		admitted.EVO.Metadata.FieldObservation,
+		fieldObservation,
+	) {
+		t.Fatalf(
+			"stored RECAPTURE field observation mismatch\nwant: %#v\ngot:  %#v",
+			fieldObservation,
+			admitted.EVO.Metadata.FieldObservation,
+		)
+	}
+}
+
+func TestExecutionAlreadyObservedUsesCanonicalFieldLineage(t *testing.T) {
+	st := core.EmptyState()
+
+	signal := core.EmergION{
+		IDN: "E-EXECUTION-SIGNAL",
+		REL: map[string]string{
+			"source_kind":     "EXECUTION_RESULT",
+			"parent_emergion": "E-PARENT",
+			"adapter":         "LOCAL_GEMMA",
+			"action":          "ANALYZE",
+		},
+	}
+
+	st.AtGOV[signal.IDN] = signal
+
+	if !executionAlreadyObserved(
+		st,
+		"E-PARENT",
+		"LOCAL_GEMMA",
+		"ANALYZE",
+	) {
+		t.Fatal("existing execution signal was not detected")
+	}
+
+	if executionAlreadyObserved(
+		st,
+		"E-OTHER",
+		"LOCAL_GEMMA",
+		"ANALYZE",
+	) {
+		t.Fatal("different parent was incorrectly suppressed")
+	}
+
+	if executionAlreadyObserved(
+		st,
+		"E-PARENT",
+		"LOCAL_GEMMA",
+		"DRAFT",
+	) {
+		t.Fatal("different action was incorrectly suppressed")
 	}
 }

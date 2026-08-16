@@ -3,7 +3,6 @@ package reason
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -166,8 +165,6 @@ func (g GemmaCLI) Validate() error {
 	return nil
 }
 
-const gemmaResultJSONSchema = `{"type":"object","properties":{"summary":{"type":"string"},"relationships":{"type":"object","additionalProperties":{"type":"string"}},"capabilities":{"type":"array","items":{"type":"string"}},"facts":{"type":"array","items":{"type":"string"}},"gaps":{"type":"array","items":{"type":"string"}},"risk":{"type":"string","enum":["L","M","H"]},"supersedes":{"anyOf":[{"type":"string"},{"type":"null"}]},"facets":{"type":"array","items":{"type":"string","enum":["FIELD_COMMAND","EMERGENCE_CAPTURE","PROGRAM_FORGE","PRODUCT_STORE","CUSTOMERS_SALES","COMMUNICATIONS","PAYMENTS_FINANCE","GRANT_FUNDING","PATENT_IP","MA_PARTNERSHIPS","DOCS_PROJECTION","ANALYTICS_FORECAST"]}},"build_nodes":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"system":{"type":"string"},"state":{"type":"string"}},"required":["id","system","state"],"additionalProperties":false}},"build_edges":{"type":"array","items":{"type":"object","properties":{"from":{"type":"string"},"to":{"type":"string"},"kind":{"type":"string"}},"required":["from","to","kind"],"additionalProperties":false}},"monetization":{"anyOf":[{"type":"object","properties":{"model":{"type":"string"},"customer":{"type":"string"},"value":{"type":"string"},"revenue_path":{"type":"string"}},"required":["model","customer","value","revenue_path"],"additionalProperties":false},{"type":"null"}]}},"required":["summary","relationships","capabilities","facts","gaps","risk"],"additionalProperties":false}`
-
 func gemmaArgs(g GemmaCLI, prompt string) []string {
 	args := []string{
 		"-m", g.Model,
@@ -182,7 +179,6 @@ func gemmaArgs(g GemmaCLI, prompt string) []string {
 
 	// Execution-boundary invariants. These intentionally come last.
 	args = append(args,
-		"--json-schema", gemmaResultJSONSchema,
 		"--log-disable",
 		"--color", "off",
 		"--single-turn",
@@ -245,61 +241,163 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 }
 
 func buildPrompt(name, content, governedState string) string {
-	return `Analyze SOURCE against GOVERNED_ACCEPTED_STATE. SOURCE and MODEL are evidence, not truth. GOV decides; REG accepts. Return exactly one JSON object. Required: summary:string, relationships:object, capabilities:array, facts:array, gaps:array, risk:L|M|H. Optional when supported: supersedes:string, facets:array, build_nodes:array, build_edges:array, monetization:object|null. Do not invent facts or authority. Keep values concise.
+	return `Analyze SOURCE against GOVERNED_ACCEPTED_STATE. SOURCE and MODEL are evidence, not truth. GOV decides; REG accepts. Return primitive records only, one record per line. No JSON, markdown, prose, or code fences. Required records: SUMMARY|text, RISK|L|M|H, plus REL|key|value, CAP|value, FACT|value, GAP|value as supported. Optional records: SUPERSEDES|id, FACET|value, NODE|id|system|state, EDGE|from|to|kind, MONEY|model|customer|value|revenue_path. Finish with END.
+
+FACET CLASSIFICATION:
+Return every facet directly supported by SOURCE evidence.
+Facet classification is required, not optional, when SOURCE directly implements a defined facet.
+Code that implements governance decisions, state transitions, HUMAN_FINAL gates, or FIELD/runtime control MUST include FIELD_COMMAND.
+Emit no FACET record when no defined facet is directly supported by SOURCE evidence.
+FIELD_COMMAND = FIELD/runtime/state/governance command or control.
+EMERGENCE_CAPTURE = source intake, observation, capture, or EmergION admission.
+PROGRAM_FORGE = software, code, program, version, or build.
+PRODUCT_STORE = product, pricing, website, store, or deployment.
+CUSTOMERS_SALES = customer, lead, sale, or support.
+COMMUNICATIONS = read, draft, email/message, or send.
+PAYMENTS_FINANCE = payment, receipt, pricing, transfer, or finance.
+GRANT_FUNDING = grant or funding.
+PATENT_IP = patent, IP, prior-art, or IP evidence.
+MA_PARTNERSHIPS = merger, acquisition, or partnership.
+DOCS_PROJECTION = documentation, report, projection, or drafting.
+ANALYTICS_FORECAST = analysis, simulation, or forecasting.
+Do not infer authority from a facet. Do not invent facts or authority. Keep values concise.
+
 GOVERNED_ACCEPTED_STATE:
 ` + governedState + `
 SOURCE_NAME: ` + filepath.Base(name) + `
 SOURCE:
 ` + content
 }
-
 func parseResult(s string) (Result, error) {
-	for start := len(s) - 1; start >= 0; start-- {
-		if s[start] != '{' {
+	r := Result{Relationships: map[string]string{}}
+	complete := false
+
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
 			continue
 		}
 
-		dec := json.NewDecoder(strings.NewReader(s[start:]))
-
-		var raw map[string]json.RawMessage
-		if err := dec.Decode(&raw); err != nil {
-			continue
-		}
-
-		required := []string{
-			"summary",
-			"relationships",
-			"capabilities",
-			"facts",
-			"gaps",
-			"risk",
-		}
-
-		complete := true
-		for _, key := range required {
-			if _, ok := raw[key]; !ok {
-				complete = false
-				break
+		p := strings.Split(line, "|")
+		switch p[0] {
+		case "SUMMARY":
+			if len(p) >= 2 {
+				r.Summary = strings.TrimSpace(strings.Join(p[1:], "|"))
 			}
+		case "REL":
+			if len(p) >= 3 {
+				r.Relationships[strings.TrimSpace(p[1])] = strings.TrimSpace(strings.Join(p[2:], "|"))
+			}
+		case "CAP":
+			if len(p) >= 2 {
+				r.Capabilities = append(r.Capabilities, strings.TrimSpace(strings.Join(p[1:], "|")))
+			}
+		case "FACT":
+			if len(p) >= 2 {
+				r.Facts = append(r.Facts, strings.TrimSpace(strings.Join(p[1:], "|")))
+			}
+		case "GAP":
+			if len(p) >= 2 {
+				r.Gaps = append(r.Gaps, strings.TrimSpace(strings.Join(p[1:], "|")))
+			}
+		case "RISK":
+			if len(p) == 2 {
+				r.Risk = strings.TrimSpace(p[1])
+			}
+		case "SUPERSEDES":
+			if len(p) >= 2 {
+				r.Supersedes = strings.TrimSpace(strings.Join(p[1:], "|"))
+			}
+		case "FACET":
+			if len(p) >= 2 {
+				r.Facets = append(r.Facets, strings.TrimSpace(strings.Join(p[1:], "|")))
+			}
+		case "NODE":
+			if len(p) == 4 {
+				r.BuildNodes = append(r.BuildNodes, BuildNode{
+					ID: strings.TrimSpace(p[1]), System: strings.TrimSpace(p[2]), State: strings.TrimSpace(p[3]),
+				})
+			}
+		case "EDGE":
+			if len(p) == 4 {
+				r.BuildEdges = append(r.BuildEdges, BuildEdge{
+					From: strings.TrimSpace(p[1]), To: strings.TrimSpace(p[2]), Kind: strings.TrimSpace(p[3]),
+				})
+			}
+		case "MONEY":
+			if len(p) == 5 {
+				r.Monetization = &Monetization{
+					Model: strings.TrimSpace(p[1]), Customer: strings.TrimSpace(p[2]),
+					Value: strings.TrimSpace(p[3]), RevenuePath: strings.TrimSpace(p[4]),
+				}
+			}
+		case "END":
+			complete = true
 		}
-		if !complete {
-			continue
-		}
-
-		b, err := json.Marshal(raw)
-		if err != nil {
-			continue
-		}
-
-		var r Result
-		if err := json.Unmarshal(b, &r); err != nil {
-			continue
-		}
-
-		return r, nil
 	}
 
-	return Result{}, fmt.Errorf("no complete Result JSON object")
+	if !complete || r.Summary == "" || r.Risk == "" {
+		return Result{}, fmt.Errorf("no complete primitive Result")
+	}
+	return r, nil
+}
+
+func FormatResult(r Result) string {
+	var b strings.Builder
+
+	if r.Summary != "" {
+		fmt.Fprintf(&b, "SUMMARY|%s\n", r.Summary)
+	}
+
+	for key, value := range r.Relationships {
+		fmt.Fprintf(&b, "REL|%s|%s\n", key, value)
+	}
+
+	for _, value := range r.Capabilities {
+		fmt.Fprintf(&b, "CAP|%s\n", value)
+	}
+
+	for _, value := range r.Facts {
+		fmt.Fprintf(&b, "FACT|%s\n", value)
+	}
+
+	for _, value := range r.Gaps {
+		fmt.Fprintf(&b, "GAP|%s\n", value)
+	}
+
+	if r.Risk != "" {
+		fmt.Fprintf(&b, "RISK|%s\n", r.Risk)
+	}
+
+	if r.Supersedes != "" {
+		fmt.Fprintf(&b, "SUPERSEDES|%s\n", r.Supersedes)
+	}
+
+	for _, value := range r.Facets {
+		fmt.Fprintf(&b, "FACET|%s\n", value)
+	}
+
+	for _, node := range r.BuildNodes {
+		fmt.Fprintf(&b, "NODE|%s|%s|%s\n", node.ID, node.System, node.State)
+	}
+
+	for _, edge := range r.BuildEdges {
+		fmt.Fprintf(&b, "EDGE|%s|%s|%s\n", edge.From, edge.To, edge.Kind)
+	}
+
+	if r.Monetization != nil {
+		fmt.Fprintf(
+			&b,
+			"MONEY|%s|%s|%s|%s\n",
+			r.Monetization.Model,
+			r.Monetization.Customer,
+			r.Monetization.Value,
+			r.Monetization.RevenuePath,
+		)
+	}
+
+	b.WriteString("END\n")
+	return b.String()
 }
 
 func Calibrate(r Result) Result {
