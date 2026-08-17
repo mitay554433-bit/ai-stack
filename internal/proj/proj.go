@@ -342,3 +342,311 @@ func EnsureOutput(root string) (string, error) {
 	}
 	return root, nil
 }
+
+type saabLink struct {
+	FromPRM string
+	ToPRM   string
+	Kind    string
+}
+
+type saab struct {
+	ID               string
+	MemberPRMIDs     []string
+	KinRoots         []string
+	Capabilities     []string
+	CompositionLinks []saabLink
+	BuildNodes       []core.BuildNode
+	BuildEdges       []core.BuildEdge
+}
+
+type cpsl struct {
+	SAABID  string
+	Members []string
+	Program string
+}
+
+func deriveSAABs(st core.State) ([]saab, error) {
+	prms, err := crystallizePRMs(st)
+	if err != nil {
+		return nil, err
+	}
+
+	byID := make(map[string]prm, len(prms))
+	adjacency := make(map[string]map[string]bool, len(prms))
+
+	for _, item := range prms {
+		byID[item.SourceEmergIONID] = item
+		adjacency[item.SourceEmergIONID] = map[string]bool{}
+	}
+
+	for _, item := range prms {
+		target := strings.TrimSpace(
+			item.Relationships["COMPOSITION_KIN"],
+		)
+		if target == "" {
+			continue
+		}
+
+		if target == item.SourceEmergIONID {
+			return nil, fmt.Errorf(
+				"SAAB rejected self COMPOSITION_KIN %s",
+				target,
+			)
+		}
+
+		if _, ok := byID[target]; !ok {
+			return nil, fmt.Errorf(
+				"SAAB composition target not accepted PRM: %s",
+				target,
+			)
+		}
+
+		// Membership connectivity is undirected. The explicit governed
+		// composition relation itself remains directed in CompositionLinks.
+		adjacency[item.SourceEmergIONID][target] = true
+		adjacency[target][item.SourceEmergIONID] = true
+	}
+
+	ids := make([]string, 0, len(prms))
+	for id := range byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	visited := map[string]bool{}
+	var out []saab
+
+	for _, start := range ids {
+		if visited[start] || len(adjacency[start]) == 0 {
+			continue
+		}
+
+		queue := []string{start}
+		visited[start] = true
+
+		var members []string
+
+		for len(queue) > 0 {
+			current := queue[0]
+			queue = queue[1:]
+			members = append(members, current)
+
+			neighbors := make(
+				[]string,
+				0,
+				len(adjacency[current]),
+			)
+			for neighbor := range adjacency[current] {
+				neighbors = append(neighbors, neighbor)
+			}
+			sort.Strings(neighbors)
+
+			for _, neighbor := range neighbors {
+				if visited[neighbor] {
+					continue
+				}
+				visited[neighbor] = true
+				queue = append(queue, neighbor)
+			}
+		}
+
+		sort.Strings(members)
+
+		if len(members) < 2 {
+			continue
+		}
+
+		assembly := saab{
+			ID:           "SAAB:" + strings.Join(members, "+"),
+			MemberPRMIDs: append([]string(nil), members...),
+		}
+
+		kinSet := map[string]bool{}
+		capSet := map[string]bool{}
+		linkSet := map[string]bool{}
+
+		for _, memberID := range members {
+			item := byID[memberID]
+
+			if item.KinRoot != "" {
+				kinSet[item.KinRoot] = true
+			}
+
+			for _, capability := range item.Capabilities {
+				if capability != "" {
+					capSet[capability] = true
+				}
+			}
+
+			target := strings.TrimSpace(
+				item.Relationships["COMPOSITION_KIN"],
+			)
+			if target != "" {
+				if _, inside := byID[target]; inside {
+					key := memberID + "\x00" + target
+					if !linkSet[key] {
+						linkSet[key] = true
+						assembly.CompositionLinks = append(
+							assembly.CompositionLinks,
+							saabLink{
+								FromPRM: memberID,
+								ToPRM:   target,
+								Kind:    "COMPOSITION_KIN",
+							},
+						)
+					}
+				}
+			}
+
+			for _, node := range item.BuildNodes {
+				namespaced := node
+				namespaced.ID = memberID + "::" + node.ID
+
+				assembly.BuildNodes = append(
+					assembly.BuildNodes,
+					namespaced,
+				)
+			}
+
+			for _, edge := range item.BuildEdges {
+				namespaced := edge
+				namespaced.From = memberID + "::" + edge.From
+				namespaced.To = memberID + "::" + edge.To
+
+				assembly.BuildEdges = append(
+					assembly.BuildEdges,
+					namespaced,
+				)
+			}
+		}
+
+		for root := range kinSet {
+			assembly.KinRoots = append(
+				assembly.KinRoots,
+				root,
+			)
+		}
+		sort.Strings(assembly.KinRoots)
+
+		for capability := range capSet {
+			assembly.Capabilities = append(
+				assembly.Capabilities,
+				capability,
+			)
+		}
+		sort.Strings(assembly.Capabilities)
+
+		sort.Slice(
+			assembly.CompositionLinks,
+			func(i, j int) bool {
+				if assembly.CompositionLinks[i].FromPRM !=
+					assembly.CompositionLinks[j].FromPRM {
+					return assembly.CompositionLinks[i].FromPRM <
+						assembly.CompositionLinks[j].FromPRM
+				}
+				return assembly.CompositionLinks[i].ToPRM <
+					assembly.CompositionLinks[j].ToPRM
+			},
+		)
+
+		sort.Slice(
+			assembly.BuildNodes,
+			func(i, j int) bool {
+				return assembly.BuildNodes[i].ID <
+					assembly.BuildNodes[j].ID
+			},
+		)
+
+		sort.Slice(
+			assembly.BuildEdges,
+			func(i, j int) bool {
+				left := assembly.BuildEdges[i]
+				right := assembly.BuildEdges[j]
+
+				if left.From != right.From {
+					return left.From < right.From
+				}
+				if left.To != right.To {
+					return left.To < right.To
+				}
+				return left.Kind < right.Kind
+			},
+		)
+
+		out = append(out, assembly)
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+
+	return out, nil
+}
+
+func compileCPSL(st core.State) ([]cpsl, error) {
+	assemblies, err := deriveSAABs(st)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]cpsl, 0, len(assemblies))
+
+	for _, assembly := range assemblies {
+		var b strings.Builder
+
+		b.WriteString("CPSL/1\n")
+		fmt.Fprintf(&b, "A|%q\n", assembly.ID)
+
+		for _, member := range assembly.MemberPRMIDs {
+			fmt.Fprintf(&b, "P|%q\n", member)
+		}
+
+		for _, root := range assembly.KinRoots {
+			fmt.Fprintf(&b, "K|%q\n", root)
+		}
+
+		for _, capability := range assembly.Capabilities {
+			fmt.Fprintf(&b, "C|%q\n", capability)
+		}
+
+		for _, link := range assembly.CompositionLinks {
+			fmt.Fprintf(
+				&b,
+				"L|%q|%q|%q\n",
+				link.FromPRM,
+				link.ToPRM,
+				link.Kind,
+			)
+		}
+
+		for _, node := range assembly.BuildNodes {
+			fmt.Fprintf(
+				&b,
+				"N|%q|%q|%q\n",
+				node.ID,
+				node.System,
+				node.State,
+			)
+		}
+
+		for _, edge := range assembly.BuildEdges {
+			fmt.Fprintf(
+				&b,
+				"E|%q|%q|%q\n",
+				edge.From,
+				edge.To,
+				edge.Kind,
+			)
+		}
+
+		b.WriteString("Z\n")
+
+		out = append(out, cpsl{
+			SAABID:  assembly.ID,
+			Members: append([]string(nil), assembly.MemberPRMIDs...),
+			Program: b.String(),
+		})
+	}
+
+	return out, nil
+}

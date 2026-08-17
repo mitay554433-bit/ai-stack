@@ -1,6 +1,7 @@
 package proj
 
 import (
+	"strings"
 	"testing"
 
 	"emergion-sovereign-runtime/internal/core"
@@ -401,5 +402,284 @@ func TestPRMCrystallizationDoesNotMergeSovereignKin(t *testing.T) {
 
 	if st.Accepted[child.IDN].CAP[0] != "SIMULATE" {
 		t.Fatal("PRM crystallization mutated child EmergION")
+	}
+}
+
+func TestSAABDerivesOnlyExplicitCompositionKin(t *testing.T) {
+	a := core.EmergION{
+		IDN: "E-SAAB-A",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "saab-a",
+		},
+		REL: map[string]string{
+			"COMPOSITION_KIN": "E-SAAB-B",
+		},
+		CAP: []string{"ANALYZE"},
+		EVO: core.Evolution{
+			Metadata: &core.Metadata{
+				BuildNodes: []core.BuildNode{
+					{
+						ID:     "engine",
+						System: "ANALYZER",
+						State:  "READY",
+					},
+				},
+			},
+		},
+	}
+
+	b := core.EmergION{
+		IDN: "E-SAAB-B",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "saab-b",
+		},
+		CAP: []string{"SIMULATE"},
+		EVO: core.Evolution{
+			Metadata: &core.Metadata{
+				BuildNodes: []core.BuildNode{
+					{
+						ID:     "engine",
+						System: "SIMULATOR",
+						State:  "READY",
+					},
+				},
+			},
+		},
+	}
+
+	unrelated := core.EmergION{
+		IDN: "E-SAAB-UNRELATED",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "saab-unrelated",
+		},
+		CAP: []string{"OBS"},
+	}
+
+	st := core.EmptyState()
+	st.Accepted[a.IDN] = a
+	st.Accepted[b.IDN] = b
+	st.Accepted[unrelated.IDN] = unrelated
+
+	assemblies, err := deriveSAABs(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(assemblies) != 1 {
+		t.Fatalf("SAAB count = %d want 1", len(assemblies))
+	}
+
+	got := assemblies[0]
+
+	if len(got.MemberPRMIDs) != 2 {
+		t.Fatalf("SAAB members = %#v", got.MemberPRMIDs)
+	}
+
+	if got.MemberPRMIDs[0] != a.IDN ||
+		got.MemberPRMIDs[1] != b.IDN {
+		t.Fatalf("SAAB members = %#v", got.MemberPRMIDs)
+	}
+
+	for _, id := range got.MemberPRMIDs {
+		if id == unrelated.IDN {
+			t.Fatal("unrelated accepted PRM entered SAAB")
+		}
+	}
+
+	if len(got.CompositionLinks) != 1 {
+		t.Fatalf(
+			"composition links = %#v",
+			got.CompositionLinks,
+		)
+	}
+
+	link := got.CompositionLinks[0]
+	if link.FromPRM != a.IDN ||
+		link.ToPRM != b.IDN ||
+		link.Kind != "COMPOSITION_KIN" {
+		t.Fatalf("composition link = %#v", link)
+	}
+
+	if len(got.BuildNodes) != 2 {
+		t.Fatalf("build nodes = %#v", got.BuildNodes)
+	}
+
+	if got.BuildNodes[0].ID == got.BuildNodes[1].ID {
+		t.Fatal("member build node identities collided")
+	}
+
+	if st.Accepted[a.IDN].IDN != a.IDN ||
+		st.Accepted[b.IDN].IDN != b.IDN {
+		t.Fatal("SAAB derivation mutated sovereign PRMs")
+	}
+}
+
+func TestSAABRejectsDanglingCompositionTarget(t *testing.T) {
+	em := core.EmergION{
+		IDN: "E-SAAB-DANGLING",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "saab-dangling",
+		},
+		REL: map[string]string{
+			"COMPOSITION_KIN": "E-NOT-ACCEPTED",
+		},
+	}
+
+	st := core.EmptyState()
+	st.Accepted[em.IDN] = em
+
+	if _, err := deriveSAABs(st); err == nil {
+		t.Fatal("dangling COMPOSITION_KIN unexpectedly formed SAAB")
+	}
+}
+
+func TestSAABPreservesSovereignKinRoots(t *testing.T) {
+	rootA := core.EmergION{
+		IDN: "E-KIN-A",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "kin-a",
+		},
+		REL: map[string]string{
+			"COMPOSITION_KIN": "E-KIN-B",
+		},
+	}
+
+	rootB := core.EmergION{
+		IDN: "E-KIN-B",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "kin-b",
+		},
+	}
+
+	st := core.EmptyState()
+	st.Accepted[rootA.IDN] = rootA
+	st.Accepted[rootB.IDN] = rootB
+
+	assemblies, err := deriveSAABs(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(assemblies) != 1 {
+		t.Fatalf("SAAB count = %d want 1", len(assemblies))
+	}
+
+	got := assemblies[0]
+
+	if len(got.KinRoots) != 2 {
+		t.Fatalf(
+			"sovereign Kin roots collapsed: %#v",
+			got.KinRoots,
+		)
+	}
+
+	if got.KinRoots[0] != rootA.IDN ||
+		got.KinRoots[1] != rootB.IDN {
+		t.Fatalf("Kin roots = %#v", got.KinRoots)
+	}
+}
+
+func TestCPSLCompilesDeterministicSAABStructure(t *testing.T) {
+	a := core.EmergION{
+		IDN: "E-CPSL-A",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "cpsl-a",
+		},
+		REL: map[string]string{
+			"COMPOSITION_KIN": "E-CPSL-B",
+		},
+		CAP: []string{"PROGRAM"},
+		EVO: core.Evolution{
+			Metadata: &core.Metadata{
+				BuildNodes: []core.BuildNode{
+					{
+						ID:     "source",
+						System: "SOURCE",
+						State:  "READY",
+					},
+					{
+						ID:     "transform",
+						System: "TRANSFORM",
+						State:  "READY",
+					},
+				},
+				BuildEdges: []core.BuildEdge{
+					{
+						From: "source",
+						To:   "transform",
+						Kind: "FLOW",
+					},
+				},
+			},
+		},
+	}
+
+	b := core.EmergION{
+		IDN: "E-CPSL-B",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "cpsl-b",
+		},
+		CAP: []string{"ANALYZE"},
+	}
+
+	st := core.EmptyState()
+	st.Accepted[a.IDN] = a
+	st.Accepted[b.IDN] = b
+
+	first, err := compileCPSL(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := compileCPSL(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(first) != 1 || len(second) != 1 {
+		t.Fatalf(
+			"CPSL counts = %d %d want 1 1",
+			len(first),
+			len(second),
+		)
+	}
+
+	if first[0].Program != second[0].Program {
+		t.Fatal("CPSL compilation is not deterministic")
+	}
+
+	program := first[0].Program
+
+	required := []string{
+		"CPSL/1\n",
+		`P|"E-CPSL-A"`,
+		`P|"E-CPSL-B"`,
+		`L|"E-CPSL-A"|"E-CPSL-B"|"COMPOSITION_KIN"`,
+		`N|"E-CPSL-A::source"|"SOURCE"|"READY"`,
+		`N|"E-CPSL-A::transform"|"TRANSFORM"|"READY"`,
+		`E|"E-CPSL-A::source"|"E-CPSL-A::transform"|"FLOW"`,
+		"Z\n",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(program, want) {
+			t.Fatalf(
+				"CPSL missing %q\n%s",
+				want,
+				program,
+			)
+		}
+	}
+
+	if st.Accepted[a.IDN].EVO.Metadata.BuildNodes[0].ID != "source" {
+		t.Fatal("CPSL compilation mutated source PRM build graph")
 	}
 }
