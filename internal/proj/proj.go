@@ -59,6 +59,7 @@ func rows(st core.State) []row {
 
 type convergenceRow struct {
 	ID            string
+	Kin           string
 	Summary       string
 	Topology      string
 	Facets        string
@@ -71,12 +72,39 @@ type convergenceRow struct {
 func convergenceRows(st core.State) []convergenceRow {
 	out := make([]convergenceRow, 0, len(st.Accepted))
 
+	children := map[string][]string{}
+	for _, e := range st.Accepted {
+		predecessor := strings.TrimSpace(e.EVO.Supersedes)
+		if predecessor == "" {
+			continue
+		}
+		if _, accepted := st.Accepted[predecessor]; !accepted {
+			continue
+		}
+		children[predecessor] = append(children[predecessor], e.IDN)
+	}
+	for predecessor := range children {
+		sort.Strings(children[predecessor])
+	}
+
 	for _, e := range st.Accepted {
 		row := convergenceRow{
 			ID:           e.IDN,
 			Summary:      e.MEM.Summary,
 			Capabilities: strings.Join(e.CAP, ", "),
 		}
+
+		kin := []string{}
+		predecessor := strings.TrimSpace(e.EVO.Supersedes)
+		if predecessor != "" {
+			if _, accepted := st.Accepted[predecessor]; accepted {
+				kin = append(kin, "predecessor → "+predecessor)
+			}
+		}
+		for _, descendant := range children[e.IDN] {
+			kin = append(kin, "descendant → "+descendant)
+		}
+		row.Kin = strings.Join(kin, "; ")
 
 		if e.EVO.Metadata != nil {
 			row.Topology = string(e.EVO.Metadata.Topology)
@@ -199,6 +227,7 @@ code{color:#a78bfa}
 <tr>
 <th>EmergION</th>
 <th>Meaning</th>
+<th>Kin</th>
 <th>Topology</th>
 <th>Facets</th>
 <th>Capabilities</th>
@@ -212,6 +241,7 @@ code{color:#a78bfa}
 <tr>
 <td><code>{{.ID}}</code></td>
 <td>{{.Summary}}</td>
+<td>{{.Kin}}</td>
 <td>{{.Topology}}</td>
 <td>{{.Facets}}</td>
 <td>{{.Capabilities}}</td>
