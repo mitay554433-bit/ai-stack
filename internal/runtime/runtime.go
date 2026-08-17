@@ -582,6 +582,17 @@ func (r Runtime) validateLineage(analysis *reason.Result) error {
 		return err
 	}
 
+	compositionTarget := strings.TrimSpace(analysis.Relationships["COMPOSITION_KIN"])
+	if compositionTarget != "" {
+		if _, ok := st.Accepted[compositionTarget]; !ok {
+			return fmt.Errorf(
+				"composition rejected: COMPOSITION_KIN target %q is not REG-accepted",
+				compositionTarget,
+			)
+		}
+		analysis.Relationships["COMPOSITION_KIN"] = compositionTarget
+	}
+
 	if returnedID != "" {
 		previous, ok := st.Returned[returnedID]
 		if !ok {
@@ -812,6 +823,14 @@ func (r Runtime) captureBytes(
 
 		_, _ = r.Store.PruneOrphans()
 		return core.EmergION{}, false, err
+	}
+
+	if target := strings.TrimSpace(em.REL["COMPOSITION_KIN"]); target != "" && target == em.IDN {
+		_, _ = r.Store.PruneOrphans()
+		return core.EmergION{}, false, fmt.Errorf(
+			"composition rejected: COMPOSITION_KIN cannot self-reference %s",
+			em.IDN,
+		)
 	}
 
 	if em.EVO.Metadata == nil {

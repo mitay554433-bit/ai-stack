@@ -1726,3 +1726,278 @@ func TestCaptureRejectsRuntimeOwnedSourceIdentityRelationships(t *testing.T) {
 		})
 	}
 }
+
+func TestCaptureAllowsCompositionKinToREGAcceptedTarget(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target := core.EmergION{
+		IDN: "E-COMPOSITION-TARGET",
+		STA: core.StateAtGOV,
+		MEM: core.Memory{
+			SourceHash: "composition-target-source",
+			Bytes:      1,
+			Stored:     1,
+			Summary:    "accepted composition target",
+		},
+		REL: map[string]string{
+			"source_name": "target.txt",
+		},
+		CAP: []string{"OBS"},
+		VAL: core.Validation{
+			Facts:  []string{"source_preserved"},
+			Recoil: true,
+			WVC:    true,
+		},
+		EVO: core.Evolution{
+			Version: 1,
+		},
+	}
+
+	if _, err := s.SaveCandidate(target); err != nil {
+		t.Fatal(err)
+	}
+
+	approved, decision, err := gov.Decide(
+		target,
+		gov.Approve,
+		"HUMAN_FINAL",
+		"approve composition target",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decisionID, err := s.SaveDecision(decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, receipt, err := reg.Accept(approved, decisionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.SaveAccepted(receipt); err != nil {
+		t.Fatal(err)
+	}
+
+	source := filepath.Join(root, "composition.txt")
+	if err := os.WriteFile(
+		source,
+		[]byte("bounded composition source"),
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store: s,
+		Reasoner: lineageReasoner{
+			result: reason.Result{
+				Summary: "bounded composition source",
+				Relationships: map[string]string{
+					"source_name":     "composition.txt",
+					"COMPOSITION_KIN": target.IDN,
+				},
+				Capabilities: []string{"OBS"},
+				Facts:        []string{"source_preserved"},
+				Risk:         "L",
+			},
+		},
+	}
+
+	em, duplicate, err := r.Capture(
+		context.Background(),
+		source,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate {
+		t.Fatal("new composition source unexpectedly treated as duplicate")
+	}
+
+	if em.REL["COMPOSITION_KIN"] != target.IDN {
+		t.Fatalf(
+			"COMPOSITION_KIN = %q want %q",
+			em.REL["COMPOSITION_KIN"],
+			target.IDN,
+		)
+	}
+
+	if em.EVO.Supersedes != "" {
+		t.Fatalf(
+			"composition relationship altered sovereign Kin lineage: supersedes = %q",
+			em.EVO.Supersedes,
+		)
+	}
+
+	if em.STA != core.StateAtGOV {
+		t.Fatalf("composition candidate state = %q", em.STA)
+	}
+}
+
+func TestCaptureRejectsCompositionKinToNonAcceptedTarget(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	source := filepath.Join(root, "composition-invalid.txt")
+	if err := os.WriteFile(
+		source,
+		[]byte("invalid composition target source"),
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store: s,
+		Reasoner: lineageReasoner{
+			result: reason.Result{
+				Summary: "invalid composition target",
+				Relationships: map[string]string{
+					"source_name":     "composition-invalid.txt",
+					"COMPOSITION_KIN": "E-NOT-REG-ACCEPTED",
+				},
+				Capabilities: []string{"OBS"},
+				Facts:        []string{"source_preserved"},
+				Risk:         "L",
+			},
+		},
+	}
+
+	_, _, err = r.Capture(
+		context.Background(),
+		source,
+		false,
+	)
+	if err == nil {
+		t.Fatal("non-accepted COMPOSITION_KIN target unexpectedly admitted")
+	}
+
+	events, eventsErr := s.Events()
+	if eventsErr != nil {
+		t.Fatal(eventsErr)
+	}
+	if len(events) != 0 {
+		t.Fatalf(
+			"rejected COMPOSITION_KIN target wrote %d event(s)",
+			len(events),
+		)
+	}
+}
+
+func TestCaptureRejectsCompositionKinSelfReference(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sourceBytes := []byte("composition self reference source")
+	sourceHash := store.Hash(sourceBytes)
+	selfID := "E-" + strings.ToUpper(sourceHash[:16])
+
+	target := core.EmergION{
+		IDN: selfID,
+		STA: core.StateAtGOV,
+		MEM: core.Memory{
+			SourceHash: "different-accepted-source-hash",
+			Bytes:      1,
+			Stored:     1,
+			Summary:    "accepted identity collision target",
+		},
+		REL: map[string]string{
+			"source_name": "accepted-target.txt",
+		},
+		CAP: []string{"OBS"},
+		VAL: core.Validation{
+			Facts:  []string{"source_preserved"},
+			Recoil: true,
+			WVC:    true,
+		},
+		EVO: core.Evolution{
+			Version: 1,
+		},
+	}
+
+	if _, err := s.SaveCandidate(target); err != nil {
+		t.Fatal(err)
+	}
+
+	approved, decision, err := gov.Decide(
+		target,
+		gov.Approve,
+		"HUMAN_FINAL",
+		"approve self-reference proof target",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decisionID, err := s.SaveDecision(decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, receipt, err := reg.Accept(approved, decisionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.SaveAccepted(receipt); err != nil {
+		t.Fatal(err)
+	}
+
+	before := len(mustEvents(t, s))
+
+	source := filepath.Join(root, "self-reference.txt")
+	if err := os.WriteFile(source, sourceBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store: s,
+		Reasoner: lineageReasoner{
+			result: reason.Result{
+				Summary: "self-referencing composition proposal",
+				Relationships: map[string]string{
+					"source_name":     "self-reference.txt",
+					"COMPOSITION_KIN": selfID,
+				},
+				Capabilities: []string{"OBS"},
+				Facts:        []string{"source_preserved"},
+				Risk:         "L",
+			},
+		},
+	}
+
+	_, _, err = r.Capture(
+		context.Background(),
+		source,
+		false,
+	)
+	if err == nil {
+		t.Fatal("self-referencing COMPOSITION_KIN unexpectedly admitted")
+	}
+
+	after := len(mustEvents(t, s))
+	if after != before {
+		t.Fatalf(
+			"self-reference rejection changed event count: before=%d after=%d",
+			before,
+			after,
+		)
+	}
+}
