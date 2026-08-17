@@ -112,7 +112,6 @@ func Rebuild(events []core.Event) (core.State, error) {
 
 			receipt := *ev.ActionAuthorization
 			receipt.EventID = ev.ID
-			receipt.EventID = ev.ID
 			em, ok := st.Accepted[receipt.EmergIONID]
 			if !ok {
 				return st, fmt.Errorf("action authorization target not REG-accepted: %s", receipt.EmergIONID)

@@ -444,7 +444,7 @@ func deriveDelta(previous core.EmergION, analysis reason.Result) []string {
 	var delta []string
 
 	if strings.TrimSpace(previous.MEM.Summary) != strings.TrimSpace(analysis.Summary) {
-		delta = append(delta, "SUMMARY_CHANGED")
+		delta = append(delta, "DS")
 	}
 
 	previousCaps := stringSet(previous.CAP)
@@ -464,10 +464,10 @@ func deriveDelta(previous core.EmergION, analysis reason.Result) []string {
 	sort.Strings(addedCaps)
 	sort.Strings(removedCaps)
 	for _, capability := range addedCaps {
-		delta = append(delta, "CAP_ADDED:"+capability)
+		delta = append(delta, "DC:+:"+capability)
 	}
 	for _, capability := range removedCaps {
-		delta = append(delta, "CAP_REMOVED:"+capability)
+		delta = append(delta, "DC:-:"+capability)
 	}
 
 	previousRelationships := previous.REL
@@ -503,11 +503,11 @@ func deriveDelta(previous core.EmergION, analysis reason.Result) []string {
 		currentValue, currentOK := currentRelationships[key]
 		switch {
 		case !previousOK && currentOK:
-			delta = append(delta, "REL_ADDED:"+key)
+			delta = append(delta, "DR:+:"+key)
 		case previousOK && !currentOK:
-			delta = append(delta, "REL_REMOVED:"+key)
+			delta = append(delta, "DR:-:"+key)
 		case previousOK && currentOK && previousValue != currentValue:
-			delta = append(delta, "REL_CHANGED:"+key)
+			delta = append(delta, "DR:~:"+key)
 		}
 	}
 
@@ -536,14 +536,14 @@ func deriveDelta(previous core.EmergION, analysis reason.Result) []string {
 	sort.Strings(addedFacets)
 	sort.Strings(removedFacets)
 	for _, facet := range addedFacets {
-		delta = append(delta, "FACET_ADDED:"+facet)
+		delta = append(delta, "DF:+:"+facet)
 	}
 	for _, facet := range removedFacets {
-		delta = append(delta, "FACET_REMOVED:"+facet)
+		delta = append(delta, "DF:-:"+facet)
 	}
 
 	if len(delta) == 0 {
-		return []string{"NO_STRUCTURAL_DELTA"}
+		return []string{"D0"}
 	}
 	return delta
 }

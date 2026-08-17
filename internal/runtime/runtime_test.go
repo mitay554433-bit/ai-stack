@@ -210,10 +210,10 @@ func TestCaptureAcceptsREGAcceptedSupersedes(t *testing.T) {
 	}
 
 	expectedDelta := []string{
-		"SUMMARY_CHANGED",
-		"CAP_ADDED:OBS",
-		"REL_ADDED:governed_state",
-		"REL_ADDED:source_name",
+		"DS",
+		"DC:+:OBS",
+		"DR:+:governed_state",
+		"DR:+:source_name",
 	}
 	if len(em.EVO.Delta) != len(expectedDelta) {
 		t.Fatalf("unexpected deterministic delta: %#v", em.EVO.Delta)
@@ -478,9 +478,9 @@ func TestReturnedEmergIONReentersThroughRework(t *testing.T) {
 	foundCapability := false
 	for _, item := range successor.EVO.Delta {
 		switch item {
-		case "SUMMARY_CHANGED":
+		case "DS":
 			foundSummary = true
-		case "CAP_ADDED:CMP":
+		case "DC:+:CMP":
 			foundCapability = true
 		}
 	}
@@ -732,7 +732,7 @@ func TestDeriveDeltaIgnoresRuntimeProtectorRelationships(t *testing.T) {
 	got := deriveDelta(previous, analysis)
 
 	want := []string{
-		"REL_CHANGED:source_name",
+		"DR:~:source_name",
 	}
 
 	if !reflect.DeepEqual(got, want) {
