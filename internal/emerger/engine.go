@@ -83,7 +83,7 @@ func metadata(result reason.Result, aiIntegrated bool) *core.Metadata {
 		Topology:     core.TopologyDodecahedronV1,
 		CapturedAt:   time.Now().UTC(),
 		AIIntegrated: aiIntegrated,
-		PromptSchema: "EMERGER_LOGICAL_V2",
+		PromptSchema: "MXPD/2",
 	}
 	for _, facet := range result.Facets {
 		m.Facets = append(m.Facets, core.Facet(facet))

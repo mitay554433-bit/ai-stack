@@ -612,7 +612,7 @@ func (r Runtime) recapture(
 			Topology:     core.TopologyDodecahedronV1,
 			CapturedAt:   time.Now().UTC(),
 			AIIntegrated: r.Reasoner != nil && r.Reasoner.Name() != "heuristic",
-			PromptSchema: "EMERGER_LOGICAL_V2",
+			PromptSchema: "MXPD/2",
 		}
 	}
 	em.EVO.Metadata.FieldObservation = append(

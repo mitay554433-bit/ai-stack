@@ -254,8 +254,8 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 }
 
 func buildPrompt(name, content, governedState string) string {
-	return `:MXPD/2
-:REDUCE
+	return `@L:MXPD/2
+@T:REDUCE
 AX[S!=T;M!=T;GOV>D;REG>A;NI;FC]
 OUT[S|x;K|L|M|H;L|k|v;C|x;F|x;G|x;U|id;T|facet;N|id|system|state;E|from|to|kind;M|model|customer|value|revenue_path;Z]
 SEM[F=required_mechanism|algorithm|equation|invariant|state_transition;C=transferable_behavior;L=essential_relation;G=missing_mechanism|nonessential_baggage;N=component;E=flow]
