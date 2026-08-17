@@ -309,12 +309,12 @@ func TestGovernedStateContextRemainsValidJSON(t *testing.T) {
 		t.Fatal("bounded projection unexpectedly empty")
 	}
 
-	if !strings.Contains(projected, "ID=") {
-		t.Fatal("bounded projection missing native ID record")
+	if !strings.Contains(projected, "I=") {
+		t.Fatal("bounded projection missing compact I record")
 	}
 
-	if !strings.Contains(projected, "SUMMARY=") {
-		t.Fatal("bounded projection missing native SUMMARY record")
+	if !strings.Contains(projected, "S=") {
+		t.Fatal("bounded projection missing compact S record")
 	}
 }
 

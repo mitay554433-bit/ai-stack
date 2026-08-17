@@ -73,12 +73,12 @@ func (r Runtime) governedStateContext() (core.State, string, error) {
 	for _, id := range ids {
 		em := st.Accepted[id]
 
-		if !write("ID", em.IDN) || !write("SUMMARY", em.MEM.Summary) {
+		if !write("I", em.IDN) || !write("S", em.MEM.Summary) {
 			break
 		}
 
 		for _, capability := range em.CAP {
-			if !write("CAP", capability) {
+			if !write("C", capability) {
 				return st, b.String(), nil
 			}
 		}
@@ -90,18 +90,18 @@ func (r Runtime) governedStateContext() (core.State, string, error) {
 		sort.Strings(keys)
 
 		for _, key := range keys {
-			if !write("REL_KEY", key) || !write("REL_VALUE", em.REL[key]) {
+			if !write("K", key) || !write("V", em.REL[key]) {
 				return st, b.String(), nil
 			}
 		}
 
 		if em.EVO.Metadata != nil {
-			if !write("TOPOLOGY", string(em.EVO.Metadata.Topology)) {
+			if !write("T", string(em.EVO.Metadata.Topology)) {
 				return st, b.String(), nil
 			}
 		}
 
-		if !write("END", em.IDN) {
+		if !write("Z", em.IDN) {
 			break
 		}
 	}
