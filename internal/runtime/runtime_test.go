@@ -1667,3 +1667,79 @@ func TestExecutionObservationRemainsConfinedToExactKinMember(t *testing.T) {
 		t.Fatal("predecessor execution observation leaked across sovereign Kin boundary")
 	}
 }
+
+func TestCaptureSourceIdentityRemainsRuntimeOwned(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sourceBytes := []byte("canonical source identity proof")
+	source := filepath.Join(root, "source-proof.txt")
+	if err := os.WriteFile(source, sourceBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store: s,
+		Reasoner: lineageReasoner{
+			result: reason.Result{
+				Summary: "source identity spoof attempt",
+				Relationships: map[string]string{
+					"source_name": "fake-source.txt",
+					"source_hash": "FAKE-SOURCE-HASH",
+					"provenance":  "FAKE-PROVENANCE",
+				},
+				Capabilities: []string{"OBS"},
+				Facts:        []string{"source_preserved"},
+				Risk:         "L",
+			},
+		},
+	}
+
+	em, duplicate, err := r.Capture(
+		context.Background(),
+		source,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate {
+		t.Fatal("new source unexpectedly treated as duplicate")
+	}
+
+	expectedHash := store.Hash(sourceBytes)
+	if em.MEM.SourceHash != expectedHash {
+		t.Fatalf(
+			"runtime source identity changed: got %q want %q",
+			em.MEM.SourceHash,
+			expectedHash,
+		)
+	}
+
+	if em.MEM.Provenance != "local_dropzone" {
+		t.Fatalf(
+			"runtime provenance changed: got %q want local_dropzone",
+			em.MEM.Provenance,
+		)
+	}
+
+	expectedID := "E-" + strings.ToUpper(expectedHash[:16])
+	if em.IDN != expectedID {
+		t.Fatalf(
+			"runtime EmergION identity changed: got %q want %q",
+			em.IDN,
+			expectedID,
+		)
+	}
+
+	if em.REL["source_hash"] != "FAKE-SOURCE-HASH" {
+		t.Fatal("test did not preserve non-authoritative source_hash observation")
+	}
+	if em.REL["provenance"] != "FAKE-PROVENANCE" {
+		t.Fatal("test did not preserve non-authoritative provenance observation")
+	}
+}
