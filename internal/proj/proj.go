@@ -71,6 +71,60 @@ type convergenceRow struct {
 	BuildEdges    string
 }
 
+type prm struct {
+	SourceEmergIONID string
+	SourceHash       string
+	KinRoot          string
+	Archonym         string
+	Capabilities     []string
+	Facts            []string
+	Relationships    map[string]string
+	Facets           []core.Facet
+	BuildNodes       []core.BuildNode
+	BuildEdges       []core.BuildEdge
+	Delta            []string
+}
+
+func crystallizePRMs(st core.State) ([]prm, error) {
+	out := make([]prm, 0, len(st.Accepted))
+
+	for _, em := range st.Accepted {
+		root, err := livefield.AcceptedKinRoot(st.Accepted, em.IDN)
+		if err != nil {
+			return nil, err
+		}
+
+		item := prm{
+			SourceEmergIONID: em.IDN,
+			SourceHash:       em.MEM.SourceHash,
+			KinRoot:          root,
+			Capabilities:     append([]string(nil), em.CAP...),
+			Facts:            append([]string(nil), em.VAL.Facts...),
+			Relationships:    map[string]string{},
+			Delta:            append([]string(nil), em.EVO.Delta...),
+		}
+
+		for key, value := range em.REL {
+			item.Relationships[key] = value
+		}
+
+		if em.EVO.Metadata != nil {
+			item.Archonym = em.EVO.Metadata.Archonym
+			item.Facets = append([]core.Facet(nil), em.EVO.Metadata.Facets...)
+			item.BuildNodes = append([]core.BuildNode(nil), em.EVO.Metadata.BuildNodes...)
+			item.BuildEdges = append([]core.BuildEdge(nil), em.EVO.Metadata.BuildEdges...)
+		}
+
+		out = append(out, item)
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].SourceEmergIONID < out[j].SourceEmergIONID
+	})
+
+	return out, nil
+}
+
 func convergenceRows(st core.State) ([]convergenceRow, error) {
 	out := make([]convergenceRow, 0, len(st.Accepted))
 
