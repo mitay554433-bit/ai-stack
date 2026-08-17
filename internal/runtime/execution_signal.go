@@ -65,18 +65,24 @@ func (r Runtime) CaptureExecutionResult(
 		risk = "M"
 	}
 
+	relationships := map[string]string{
+		"source_kind":     "EXECUTION_RESULT",
+		"parent_emergion": request.EmergIONID,
+		"adapter":         request.Adapter,
+		"action":          request.Action,
+	}
+
+	if request.AuthorizationID != "" {
+		relationships["authorization_event"] = request.AuthorizationID
+	}
+
 	signalRuntime := r
 	signalRuntime.Reasoner = fixedReasoner{
 		name:    "execution-signal",
 		version: "v1",
 		result: reason.Result{
-			Summary: "bounded execution result observation",
-			Relationships: map[string]string{
-				"source_kind":     "EXECUTION_RESULT",
-				"parent_emergion": request.EmergIONID,
-				"adapter":         request.Adapter,
-				"action":          request.Action,
-			},
+			Summary:       "bounded execution result observation",
+			Relationships: relationships,
 			Capabilities: []string{
 				"OBS",
 				"CMP",

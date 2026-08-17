@@ -264,6 +264,32 @@ DROP_AS_G_ONLY_IF_NONESSENTIAL[wrapper,serialization,SDK,framework,presentation,
 FACET[FIELD_COMMAND,EMERGENCE_CAPTURE,PROGRAM_FORGE,PRODUCT_STORE,CUSTOMERS_SALES,COMMUNICATIONS,PAYMENTS_FINANCE,GRANT_FUNDING,PATENT_IP,MA_PARTNERSHIPS,DOCS_PROJECTION,ANALYTICS_FORECAST]
 RULE[FIELD_COMMAND=runtime|state|governance_control;NO_INVENT;NO_AUTH_INFER;Z_REQUIRED]
 
+OUTPUT CONTRACT:
+- Output primitive lines only.
+- Use the vertical pipe character | as the delimiter.
+- Never replace | with a colon.
+- S| MUST contain a non-empty one-sentence summary.
+- K| MUST be exactly K|L, K|M, or K|H.
+- F| contains an evidenced fact.
+- C| contains a transferable capability.
+- G| contains an evidenced gap when present.
+- L|key|value contains an evidenced relationship when present.
+- Z MUST be the final line.
+- No markdown.
+- No prose outside primitive lines.
+
+RISK:
+K|L = bounded/local/no evidenced harmful authority
+K|M = uncertainty, missing evidence, or meaningful operational risk
+K|H = external authority, destructive action, transfer, deployment, or serious evidenced risk
+
+MINIMUM VALID SHAPE:
+S|non-empty summary
+K|L
+F|evidenced fact
+C|transferable capability
+Z
+
 :
 ` + governedState + `
 :` + filepath.Base(name) + `

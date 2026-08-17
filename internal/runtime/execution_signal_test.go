@@ -24,10 +24,11 @@ func TestExecutionResultReentersEmergIONPipeline(t *testing.T) {
 	}
 
 	request := adapters.ExecutionRequest{
-		EmergIONID: "E-PARENT",
-		Adapter:    "EMAIL",
-		Action:     "SEND",
-		Authority:  "SEND_GATED",
+		EmergIONID:      "E-PARENT",
+		AuthorizationID: "EV-Q-PROOF",
+		Adapter:         "EMAIL",
+		Action:          "SEND",
+		Authority:       "SEND_GATED",
 	}
 
 	result := adapters.ExecutionResult{
@@ -87,6 +88,13 @@ func TestExecutionResultReentersEmergIONPipeline(t *testing.T) {
 			got.REL["parent_emergion"],
 		)
 	}
+	if got.REL["authorization_event"] != "EV-Q-PROOF" {
+		t.Fatalf(
+			"authorization event = %q want EV-Q-PROOF",
+			got.REL["authorization_event"],
+		)
+	}
+
 }
 
 func TestFailedExecutionAlsoBecomesSignal(t *testing.T) {
