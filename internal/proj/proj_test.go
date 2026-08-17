@@ -36,7 +36,10 @@ func TestSpatialConvergenceZoneContainsAcceptedOnly(t *testing.T) {
 	st.AtGOV[atGOV.IDN] = atGOV
 	st.Rejected[rejected.IDN] = rejected
 
-	rows := convergenceRows(st)
+	rows, err := convergenceRows(st)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(rows) != 1 {
 		t.Fatalf("SPATIAL CONVERGENCE ZONE rows = %d want 1", len(rows))
@@ -75,7 +78,10 @@ func TestSpatialConvergenceZoneDerivesAcceptedKinWithoutMerging(t *testing.T) {
 	st.Accepted[predecessor.IDN] = predecessor
 	st.Accepted[successor.IDN] = successor
 
-	rows := convergenceRows(st)
+	rows, err := convergenceRows(st)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(rows) != 2 {
 		t.Fatalf("Kin projection merged sovereign EmergIONs: rows = %d want 2", len(rows))
 	}
@@ -85,11 +91,11 @@ func TestSpatialConvergenceZoneDerivesAcceptedKinWithoutMerging(t *testing.T) {
 		byID[row.ID] = row
 	}
 
-	if byID[predecessor.IDN].Kin != "descendant → E-SUCCESSOR" {
+	if byID[predecessor.IDN].Kin != "root → E-PREDECESSOR; descendant → E-SUCCESSOR" {
 		t.Fatalf("predecessor Kin = %q", byID[predecessor.IDN].Kin)
 	}
 
-	if byID[successor.IDN].Kin != "predecessor → E-PREDECESSOR" {
+	if byID[successor.IDN].Kin != "root → E-PREDECESSOR; predecessor → E-PREDECESSOR" {
 		t.Fatalf("successor Kin = %q", byID[successor.IDN].Kin)
 	}
 
@@ -116,12 +122,7 @@ func TestSpatialConvergenceZoneDoesNotInventDanglingKin(t *testing.T) {
 	st := core.EmptyState()
 	st.Accepted[em.IDN] = em
 
-	rows := convergenceRows(st)
-	if len(rows) != 1 {
-		t.Fatalf("rows = %d want 1", len(rows))
-	}
-
-	if rows[0].Kin != "" {
-		t.Fatalf("dangling predecessor fabricated into Kin: %q", rows[0].Kin)
+	if _, err := convergenceRows(st); err == nil {
+		t.Fatal("dangling accepted Kin ancestry unexpectedly projected")
 	}
 }

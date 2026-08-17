@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"emergion-sovereign-runtime/internal/core"
+	livefield "emergion-sovereign-runtime/internal/field"
 )
 
 func JSON(path string, st core.State) error {
@@ -69,7 +70,7 @@ type convergenceRow struct {
 	BuildEdges    string
 }
 
-func convergenceRows(st core.State) []convergenceRow {
+func convergenceRows(st core.State) ([]convergenceRow, error) {
 	out := make([]convergenceRow, 0, len(st.Accepted))
 
 	children := map[string][]string{}
@@ -95,6 +96,11 @@ func convergenceRows(st core.State) []convergenceRow {
 		}
 
 		kin := []string{}
+		root, err := livefield.AcceptedKinRoot(st.Accepted, e.IDN)
+		if err != nil {
+			return nil, err
+		}
+		kin = append(kin, "root → "+root)
 		predecessor := strings.TrimSpace(e.EVO.Supersedes)
 		if predecessor != "" {
 			if _, accepted := st.Accepted[predecessor]; accepted {
@@ -158,7 +164,7 @@ func convergenceRows(st core.State) []convergenceRow {
 		return out[i].ID < out[j].ID
 	})
 
-	return out
+	return out, nil
 }
 
 func HTML(path string, st core.State) error {
@@ -256,11 +262,16 @@ code{color:#a78bfa}
 </body>
 </html>`))
 
+	convergence, err := convergenceRows(st)
+	if err != nil {
+		return err
+	}
+
 	return t.Execute(f, map[string]any{
 		"Events":      st.Events,
 		"TipHash":     st.TipHash,
 		"Rows":        rows(st),
-		"Convergence": convergenceRows(st),
+		"Convergence": convergence,
 	})
 }
 
