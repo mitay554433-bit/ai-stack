@@ -5,6 +5,7 @@ import (
 	"emergion-sovereign-runtime/internal/core"
 	"emergion-sovereign-runtime/internal/pivot"
 	"fmt"
+	"strings"
 )
 
 func Rebuild(events []core.Event) (core.State, error) {
@@ -151,4 +152,46 @@ func Rebuild(events []core.Event) (core.State, error) {
 		}
 	}
 	return st, nil
+}
+
+func AcceptedKinRoot(
+	accepted map[string]core.EmergION,
+	id string,
+) (string, error) {
+	current := strings.TrimSpace(id)
+	if current == "" {
+		return "", fmt.Errorf("Kin root requires EmergION ID")
+	}
+
+	seen := map[string]bool{}
+
+	for {
+		if seen[current] {
+			return "", fmt.Errorf("Kin lineage cycle at %s", current)
+		}
+		seen[current] = true
+
+		em, ok := accepted[current]
+		if !ok {
+			return "", fmt.Errorf("Kin member not REG-accepted: %s", current)
+		}
+
+		predecessor := strings.TrimSpace(em.EVO.Supersedes)
+		if predecessor == "" {
+			return current, nil
+		}
+
+		if predecessor == current {
+			return "", fmt.Errorf("Kin lineage self-reference at %s", current)
+		}
+
+		if _, ok := accepted[predecessor]; !ok {
+			return "", fmt.Errorf(
+				"Kin predecessor not REG-accepted: %s",
+				predecessor,
+			)
+		}
+
+		current = predecessor
+	}
 }

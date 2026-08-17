@@ -323,3 +323,90 @@ func TestREGReplayRejectsWrongApprovingDecisionLink(t *testing.T) {
 		t.Fatal("REG replay accepted wrong approving decision link")
 	}
 }
+
+func TestAcceptedKinRootSingleMember(t *testing.T) {
+	accepted := map[string]core.EmergION{
+		"E-A": {
+			IDN: "E-A",
+			STA: core.StateAccepted,
+		},
+	}
+
+	root, err := AcceptedKinRoot(accepted, "E-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != "E-A" {
+		t.Fatalf("root = %q want E-A", root)
+	}
+}
+
+func TestAcceptedKinRootTraversesAcceptedAncestry(t *testing.T) {
+	accepted := map[string]core.EmergION{
+		"E-A": {
+			IDN: "E-A",
+			STA: core.StateAccepted,
+		},
+		"E-B": {
+			IDN: "E-B",
+			STA: core.StateAccepted,
+			EVO: core.Evolution{
+				Supersedes: "E-A",
+			},
+		},
+		"E-C": {
+			IDN: "E-C",
+			STA: core.StateAccepted,
+			EVO: core.Evolution{
+				Supersedes: "E-B",
+			},
+		},
+	}
+
+	root, err := AcceptedKinRoot(accepted, "E-C")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != "E-A" {
+		t.Fatalf("root = %q want E-A", root)
+	}
+}
+
+func TestAcceptedKinRootRejectsMissingAcceptedPredecessor(t *testing.T) {
+	accepted := map[string]core.EmergION{
+		"E-B": {
+			IDN: "E-B",
+			STA: core.StateAccepted,
+			EVO: core.Evolution{
+				Supersedes: "E-A",
+			},
+		},
+	}
+
+	if _, err := AcceptedKinRoot(accepted, "E-B"); err == nil {
+		t.Fatal("missing accepted predecessor unexpectedly produced Kin root")
+	}
+}
+
+func TestAcceptedKinRootRejectsCycle(t *testing.T) {
+	accepted := map[string]core.EmergION{
+		"E-A": {
+			IDN: "E-A",
+			STA: core.StateAccepted,
+			EVO: core.Evolution{
+				Supersedes: "E-B",
+			},
+		},
+		"E-B": {
+			IDN: "E-B",
+			STA: core.StateAccepted,
+			EVO: core.Evolution{
+				Supersedes: "E-A",
+			},
+		},
+	}
+
+	if _, err := AcceptedKinRoot(accepted, "E-A"); err == nil {
+		t.Fatal("cyclic accepted Kin lineage unexpectedly produced root")
+	}
+}
