@@ -81,6 +81,7 @@ func TestPrepareExecutionAcceptsHumanFinalQ(t *testing.T) {
 	st.ActionAuthorizations = append(
 		st.ActionAuthorizations,
 		core.ActionAuthorizationReceipt{
+			EventID:    "EV-Q-PROOF",
 			EmergIONID: "E-EXEC-PROOF",
 			Adapter:    "EMAIL",
 			Action:     "SEND",
@@ -107,6 +108,12 @@ func TestPrepareExecutionAcceptsHumanFinalQ(t *testing.T) {
 	if request.Adapter != "EMAIL" || request.Action != "SEND" {
 		t.Fatalf("unexpected execution request: %#v", request)
 	}
+	if request.AuthorizationID != "EV-Q-PROOF" {
+		t.Fatalf("authorization ID = %q want EV-Q-PROOF", request.AuthorizationID)
+	}
+	if request.AuthorizationID != "EV-Q-PROOF" {
+		t.Fatalf("authorization ID = %q want EV-Q-PROOF", request.AuthorizationID)
+	}
 }
 
 func TestPrepareExecutionDoesNotMutateAuthorizationState(t *testing.T) {
@@ -115,6 +122,7 @@ func TestPrepareExecutionDoesNotMutateAuthorizationState(t *testing.T) {
 	st.ActionAuthorizations = append(
 		st.ActionAuthorizations,
 		core.ActionAuthorizationReceipt{
+			EventID:    "EV-Q-PROOF",
 			EmergIONID: "E-EXEC-PROOF",
 			Adapter:    "EMAIL",
 			Action:     "SEND",

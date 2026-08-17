@@ -110,8 +110,14 @@ func PrepareExecution(
 	return ExecutionRequest{
 		EmergIONID: emergionID,
 		SourceHash: em.MEM.SourceHash,
-		Adapter:    adapter,
-		Action:     action,
-		Authority:  candidate.Authority,
+		AuthorizationID: func() string {
+			if authorization == nil {
+				return ""
+			}
+			return authorization.EventID
+		}(),
+		Adapter:   adapter,
+		Action:    action,
+		Authority: candidate.Authority,
 	}, nil
 }

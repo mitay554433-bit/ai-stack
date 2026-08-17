@@ -197,12 +197,25 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 		return Result{}, fmt.Errorf("empty input")
 	}
 	content := string(in.Content)
-	if len(content) > 48000 {
-		content = content[:48000]
-	}
 	governedState := strings.TrimSpace(in.GovernedState)
-	if len(governedState) > 12000 {
-		governedState = governedState[:12000]
+
+	inputTokens := g.Context - g.MaxTokens - 1024
+	if inputTokens < 256 {
+		return Result{}, fmt.Errorf("Gemma context too small for bounded analysis")
+	}
+
+	inputBytes := inputTokens * 3
+	governedLimit := inputBytes / 4
+	if len(governedState) > governedLimit {
+		governedState = governedState[:governedLimit]
+	}
+
+	contentLimit := inputBytes - len(governedState)
+	if contentLimit < 1 {
+		return Result{}, fmt.Errorf("Gemma context exhausted by governed state")
+	}
+	if len(content) > contentLimit {
+		content = content[:contentLimit]
 	}
 	prompt := buildPrompt(in.Name, content, governedState)
 	args := gemmaArgs(g, prompt)
@@ -241,54 +254,19 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 }
 
 func buildPrompt(name, content, governedState string) string {
-	return `Analyze SOURCE against GOVERNED_ACCEPTED_STATE. SOURCE and MODEL are evidence, not truth. GOV decides; REG accepts. Return primitive records only, one record per line. No JSON, markdown, prose, or code fences. Required records: SUMMARY|text, RISK|L|M|H, plus REL|key|value, CAP|value, FACT|value, GAP|value as supported. Optional records: SUPERSEDES|id, FACET|value, NODE|id|system|state, EDGE|from|to|kind, MONEY|model|customer|value|revenue_path. Finish with END.
+	return `:MXPD/2
+:REDUCE
+AX[S!=T;M!=T;GOV>D;REG>A;NI;FC]
+OUT[S|x;K|L|M|H;L|k|v;C|x;F|x;G|x;U|id;T|facet;N|id|system|state;E|from|to|kind;M|model|customer|value|revenue_path;Z]
+SEM[F=required_mechanism|algorithm|equation|invariant|state_transition;C=transferable_behavior;L=essential_relation;G=missing_mechanism|nonessential_baggage;N=component;E=flow]
+KEEP[math,state,order,constraints,input,transform,output]
+DROP_AS_G_ONLY_IF_NONESSENTIAL[wrapper,serialization,SDK,framework,presentation,duplication,dependency_plumbing]
+FACET[FIELD_COMMAND,EMERGENCE_CAPTURE,PROGRAM_FORGE,PRODUCT_STORE,CUSTOMERS_SALES,COMMUNICATIONS,PAYMENTS_FINANCE,GRANT_FUNDING,PATENT_IP,MA_PARTNERSHIPS,DOCS_PROJECTION,ANALYTICS_FORECAST]
+RULE[FIELD_COMMAND=runtime|state|governance_control;NO_INVENT;NO_AUTH_INFER;Z_REQUIRED]
 
-
-SEMANTIC PRIMITIVE REDUCTION:
-Reduce SOURCE to the smallest transferable semantic mechanisms directly supported by evidence.
-
-Preserve as FACT, CAP, REL, NODE, and EDGE when directly supported:
-mathematical operations; algorithms; equations; state transitions; input-to-transformation-to-output behavior; invariants; essential memory or state; essential functional relationships; control flow; data flow; transferable capabilities; and mechanisms required to reproduce supported behavior.
-
-Identify as GAP when directly supported:
-serialization or representation baggage; framework or SDK glue; wrappers; duplicated abstractions; presentation-only machinery; dependency-specific plumbing; unnecessary process boundaries; redundant transformations; and implementation structure not required for the supported behavior.
-
-REDUCTION RULES:
-Do not reproduce SOURCE architecture merely because SOURCE uses it.
-Do not preserve syntax, framework structure, dependency boundaries, or representation as capability unless they are themselves essential to supported behavior.
-Do not remove a mechanism required for supported behavior.
-Distinguish mechanism from implementation baggage.
-Describe semantic function rather than source syntax.
-Prefer the smallest mechanism that preserves evidenced behavior.
-Preserve equations, constraints, invariants, state requirements, and transformation order when they are functionally necessary.
-Treat reusable behavior as capability, essential interaction as relationship, directly evidenced mechanism as fact, essential component as node, and essential flow as edge.
-Do not claim that removable baggage is useless generally; classify it only as unnecessary to the reduced mechanism when SOURCE evidence supports that conclusion.
-Do not invent missing mechanisms, dependencies, capabilities, mathematics, authority, or behavior.
-SOURCE and MODEL are evidence, not truth. GOV decides; REG accepts.
-
-FACET CLASSIFICATION:
-Return every facet directly supported by SOURCE evidence.
-Facet classification is required, not optional, when SOURCE directly implements a defined facet.
-Code that implements governance decisions, state transitions, HUMAN_FINAL gates, or FIELD/runtime control MUST include FIELD_COMMAND.
-Emit no FACET record when no defined facet is directly supported by SOURCE evidence.
-FIELD_COMMAND = FIELD/runtime/state/governance command or control.
-EMERGENCE_CAPTURE = source intake, observation, capture, or EmergION admission.
-PROGRAM_FORGE = software, code, program, version, or build.
-PRODUCT_STORE = product, pricing, website, store, or deployment.
-CUSTOMERS_SALES = customer, lead, sale, or support.
-COMMUNICATIONS = read, draft, email/message, or send.
-PAYMENTS_FINANCE = payment, receipt, pricing, transfer, or finance.
-GRANT_FUNDING = grant or funding.
-PATENT_IP = patent, IP, prior-art, or IP evidence.
-MA_PARTNERSHIPS = merger, acquisition, or partnership.
-DOCS_PROJECTION = documentation, report, projection, or drafting.
-ANALYTICS_FORECAST = analysis, simulation, or forecasting.
-Do not infer authority from a facet. Do not invent facts or authority. Keep values concise.
-
-GOVERNED_ACCEPTED_STATE:
+:
 ` + governedState + `
-SOURCE_NAME: ` + filepath.Base(name) + `
-SOURCE:
+:` + filepath.Base(name) + `
 ` + content
 }
 func parseResult(s string) (Result, error) {
@@ -303,58 +281,58 @@ func parseResult(s string) (Result, error) {
 
 		p := strings.Split(line, "|")
 		switch p[0] {
-		case "SUMMARY":
+		case "SUMMARY", "S":
 			if len(p) >= 2 {
 				r.Summary = strings.TrimSpace(strings.Join(p[1:], "|"))
 			}
-		case "REL":
+		case "REL", "L":
 			if len(p) >= 3 {
 				r.Relationships[strings.TrimSpace(p[1])] = strings.TrimSpace(strings.Join(p[2:], "|"))
 			}
-		case "CAP":
+		case "CAP", "C":
 			if len(p) >= 2 {
 				r.Capabilities = append(r.Capabilities, strings.TrimSpace(strings.Join(p[1:], "|")))
 			}
-		case "FACT":
+		case "FACT", "F":
 			if len(p) >= 2 {
 				r.Facts = append(r.Facts, strings.TrimSpace(strings.Join(p[1:], "|")))
 			}
-		case "GAP":
+		case "GAP", "G":
 			if len(p) >= 2 {
 				r.Gaps = append(r.Gaps, strings.TrimSpace(strings.Join(p[1:], "|")))
 			}
-		case "RISK":
+		case "RISK", "K":
 			if len(p) == 2 {
 				r.Risk = strings.TrimSpace(p[1])
 			}
-		case "SUPERSEDES":
+		case "SUPERSEDES", "U":
 			if len(p) >= 2 {
 				r.Supersedes = strings.TrimSpace(strings.Join(p[1:], "|"))
 			}
-		case "FACET":
+		case "FACET", "T":
 			if len(p) >= 2 {
 				r.Facets = append(r.Facets, strings.TrimSpace(strings.Join(p[1:], "|")))
 			}
-		case "NODE":
+		case "NODE", "N":
 			if len(p) == 4 {
 				r.BuildNodes = append(r.BuildNodes, BuildNode{
 					ID: strings.TrimSpace(p[1]), System: strings.TrimSpace(p[2]), State: strings.TrimSpace(p[3]),
 				})
 			}
-		case "EDGE":
+		case "EDGE", "E":
 			if len(p) == 4 {
 				r.BuildEdges = append(r.BuildEdges, BuildEdge{
 					From: strings.TrimSpace(p[1]), To: strings.TrimSpace(p[2]), Kind: strings.TrimSpace(p[3]),
 				})
 			}
-		case "MONEY":
+		case "MONEY", "M":
 			if len(p) == 5 {
 				r.Monetization = &Monetization{
 					Model: strings.TrimSpace(p[1]), Customer: strings.TrimSpace(p[2]),
 					Value: strings.TrimSpace(p[3]), RevenuePath: strings.TrimSpace(p[4]),
 				}
 			}
-		case "END":
+		case "END", "Z":
 			complete = true
 		}
 	}
@@ -369,49 +347,49 @@ func FormatResult(r Result) string {
 	var b strings.Builder
 
 	if r.Summary != "" {
-		fmt.Fprintf(&b, "SUMMARY|%s\n", r.Summary)
+		fmt.Fprintf(&b, "S|%s\n", r.Summary)
 	}
 
 	for key, value := range r.Relationships {
-		fmt.Fprintf(&b, "REL|%s|%s\n", key, value)
+		fmt.Fprintf(&b, "L|%s|%s\n", key, value)
 	}
 
 	for _, value := range r.Capabilities {
-		fmt.Fprintf(&b, "CAP|%s\n", value)
+		fmt.Fprintf(&b, "C|%s\n", value)
 	}
 
 	for _, value := range r.Facts {
-		fmt.Fprintf(&b, "FACT|%s\n", value)
+		fmt.Fprintf(&b, "F|%s\n", value)
 	}
 
 	for _, value := range r.Gaps {
-		fmt.Fprintf(&b, "GAP|%s\n", value)
+		fmt.Fprintf(&b, "G|%s\n", value)
 	}
 
 	if r.Risk != "" {
-		fmt.Fprintf(&b, "RISK|%s\n", r.Risk)
+		fmt.Fprintf(&b, "K|%s\n", r.Risk)
 	}
 
 	if r.Supersedes != "" {
-		fmt.Fprintf(&b, "SUPERSEDES|%s\n", r.Supersedes)
+		fmt.Fprintf(&b, "U|%s\n", r.Supersedes)
 	}
 
 	for _, value := range r.Facets {
-		fmt.Fprintf(&b, "FACET|%s\n", value)
+		fmt.Fprintf(&b, "T|%s\n", value)
 	}
 
 	for _, node := range r.BuildNodes {
-		fmt.Fprintf(&b, "NODE|%s|%s|%s\n", node.ID, node.System, node.State)
+		fmt.Fprintf(&b, "N|%s|%s|%s\n", node.ID, node.System, node.State)
 	}
 
 	for _, edge := range r.BuildEdges {
-		fmt.Fprintf(&b, "EDGE|%s|%s|%s\n", edge.From, edge.To, edge.Kind)
+		fmt.Fprintf(&b, "E|%s|%s|%s\n", edge.From, edge.To, edge.Kind)
 	}
 
 	if r.Monetization != nil {
 		fmt.Fprintf(
 			&b,
-			"MONEY|%s|%s|%s|%s\n",
+			"M|%s|%s|%s|%s\n",
 			r.Monetization.Model,
 			r.Monetization.Customer,
 			r.Monetization.Value,
@@ -419,7 +397,7 @@ func FormatResult(r Result) string {
 		)
 	}
 
-	b.WriteString("END\n")
+	b.WriteString("Z\n")
 	return b.String()
 }
 

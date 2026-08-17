@@ -185,6 +185,7 @@ type REGReceipt struct {
 }
 
 type ActionAuthorizationReceipt struct {
+	EventID    string    `json:"-"`
 	EmergIONID string    `json:"i"`
 	Adapter    string    `json:"p"`
 	Action     string    `json:"x"`
