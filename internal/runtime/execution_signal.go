@@ -41,17 +41,17 @@ func (r Runtime) CaptureExecutionResult(
 		content.WriteByte('\n')
 	}
 
-	writeField("SCHEMA", "EXECUTION_SIGNAL_V1")
-	writeField("SOURCE_KIND", "EXECUTION_RESULT")
-	writeField("PARENT_EMERGION", request.EmergIONID)
-	writeField("SOURCE_HASH", request.SourceHash)
-	writeField("AUTHORIZATION", request.AuthorizationID)
-	writeField("AUTHORITY", request.Authority)
-	writeField("ADAPTER", request.Adapter)
-	writeField("ACTION", request.Action)
-	writeField("SUCCEEDED", fmt.Sprintf("%t", result.Succeeded))
-	writeField("OUTPUT", result.Output)
-	writeField("ERROR", result.Error)
+	writeField("S", "XS/1")
+	writeField("K", "XR")
+	writeField("P", request.EmergIONID)
+	writeField("H", request.SourceHash)
+	writeField("Q", request.AuthorizationID)
+	writeField("A", request.Authority)
+	writeField("D", request.Adapter)
+	writeField("X", request.Action)
+	writeField("Y", fmt.Sprintf("%t", result.Succeeded))
+	writeField("O", result.Output)
+	writeField("E", result.Error)
 
 	facts := []string{
 		"execution_result_observed",
