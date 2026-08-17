@@ -2,10 +2,12 @@ package runtime
 
 import (
 	"context"
+	"emergion-sovereign-runtime/internal/adapters"
 	"emergion-sovereign-runtime/internal/core"
 	livefield "emergion-sovereign-runtime/internal/field"
 	"emergion-sovereign-runtime/internal/gov"
 	"emergion-sovereign-runtime/internal/pivot"
+	"emergion-sovereign-runtime/internal/proj"
 	"emergion-sovereign-runtime/internal/reason"
 	"emergion-sovereign-runtime/internal/reg"
 	"emergion-sovereign-runtime/internal/store"
@@ -16,6 +18,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOnceClearsDropzone(t *testing.T) {
@@ -1999,5 +2002,236 @@ func TestCaptureRejectsCompositionKinSelfReference(t *testing.T) {
 			before,
 			after,
 		)
+	}
+}
+
+func TestSAWSourceReentersGovernedExecutionAndRecapture(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build two already-accepted governed members whose composition yields one SAW source.
+	memberA := core.EmergION{
+		IDN: "E-SAW-CIRC-A",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "saw-circ-a",
+		},
+		REL: map[string]string{
+			"COMPOSITION_KIN": "E-SAW-CIRC-B",
+		},
+		CAP: []string{"ANALYZE"},
+		VAL: core.Validation{
+			Recoil: true,
+			WVC:    true,
+		},
+		EVO: core.Evolution{
+			Version: 1,
+			Metadata: &core.Metadata{
+				CapturedAt: time.Unix(1, 0).UTC(),
+				Facets: []core.Facet{
+					core.FacetAnalyticsForecast,
+				},
+				Monetization: &core.Monetization{
+					Model:       "license",
+					Customer:    "enterprise",
+					Value:       "governed analysis artifact",
+					RevenuePath: "deployment",
+				},
+			},
+		},
+	}
+
+	memberB := core.EmergION{
+		IDN: "E-SAW-CIRC-B",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "saw-circ-b",
+		},
+		CAP: []string{"OBS"},
+		VAL: core.Validation{
+			Recoil: true,
+			WVC:    true,
+		},
+		EVO: core.Evolution{
+			Version: 1,
+		},
+	}
+
+	// Persist through the existing governed event path.
+	for _, em := range []core.EmergION{memberA, memberB} {
+		candidate := em
+		candidate.STA = core.StateAtGOV
+
+		if _, err := s.SaveCandidate(candidate); err != nil {
+			t.Fatal(err)
+		}
+
+		approved, decision, err := gov.Decide(
+			candidate,
+			gov.Approve,
+			"HUMAN_FINAL",
+			"SAW circulation proof",
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		decisionID, err := s.SaveDecision(decision)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, receipt, err := reg.Accept(approved, decisionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := s.SaveAccepted(receipt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	st, err := livefield.Rebuild(mustEvents(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sources, err := proj.SAWSources(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 1 {
+		t.Fatalf("SAW sources = %d want 1", len(sources))
+	}
+
+	sourcePath := filepath.Join(root, "saw-source.mxpd")
+	if err := os.WriteFile(sourcePath, sources[0].Content, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-enter through the existing Capture seam. The reasoner supplies only
+	// semantic analysis; runtime remains owner of source identity and lineage.
+	rt := Runtime{
+		Store: s,
+		Reasoner: lineageReasoner{
+			result: reason.Result{
+				Summary: "governed SAW source",
+				Relationships: map[string]string{
+					"source_name": "saw-source.mxpd",
+				},
+				Capabilities: []string{"ANALYZE"},
+				Facts:        []string{"saw_source_preserved"},
+				Risk:         "L",
+				Facets: []string{
+					"ANALYTICS_FORECAST",
+				},
+			},
+		},
+	}
+
+	captured, duplicate, err := rt.Capture(
+		context.Background(),
+		sourcePath,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate {
+		t.Fatal("SAW source unexpectedly duplicate")
+	}
+	if captured.STA != core.StateAtGOV {
+		t.Fatalf("captured SAW state = %s", captured.STA)
+	}
+
+	// HUMAN_FINAL remains mandatory before execution.
+	approved, decision, err := gov.Decide(
+		captured,
+		gov.Approve,
+		"HUMAN_FINAL",
+		"approve recaptured SAW source",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decisionID, err := s.SaveDecision(decision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	accepted, receipt, err := reg.Accept(approved, decisionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.SaveAccepted(receipt); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err = livefield.Rebuild(mustEvents(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := st.Accepted[accepted.IDN]; !ok {
+		t.Fatal("recaptured SAW source did not reach REG")
+	}
+
+	request, err := adapters.PrepareExecution(
+		st,
+		accepted.IDN,
+		"LOCAL_GEMMA",
+		"ANALYZE",
+		true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Use the existing binding rule to produce an exact-lineage result.
+	result := adapters.BindExecutionResult(
+		request,
+		adapters.ExecutionResult{
+			Succeeded: true,
+			Output:    "bounded SAW circulation proof",
+		},
+	)
+
+	signal, duplicate, err := rt.CaptureGovernedExecutionResult(
+		context.Background(),
+		request,
+		result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if duplicate {
+		t.Fatal("execution result unexpectedly duplicate")
+	}
+
+	if signal.STA != core.StateAtGOV {
+		t.Fatalf("execution signal state = %s", signal.STA)
+	}
+
+	if signal.REL["parent_emergion"] != accepted.IDN {
+		t.Fatalf(
+			"execution signal parent = %q want %q",
+			signal.REL["parent_emergion"],
+			accepted.IDN,
+		)
+	}
+
+	if signal.REL["adapter"] != "LOCAL_GEMMA" ||
+		signal.REL["action"] != "ANALYZE" {
+		t.Fatalf("execution signal lineage = %#v", signal.REL)
+	}
+
+	if !signal.VAL.Recoil || !signal.VAL.WVC {
+		t.Fatalf("execution signal not verified: %#v", signal.VAL)
 	}
 }
