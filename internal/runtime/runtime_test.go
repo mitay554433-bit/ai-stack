@@ -1616,3 +1616,54 @@ func TestCaptureRejectsRuntimeOwnedExecutionLineageRelationships(t *testing.T) {
 		})
 	}
 }
+
+func TestExecutionObservationRemainsConfinedToExactKinMember(t *testing.T) {
+	st := core.EmptyState()
+
+	predecessor := core.EmergION{
+		IDN: "E-KIN-PREDECESSOR",
+		STA: core.StateAccepted,
+	}
+
+	successor := core.EmergION{
+		IDN: "E-KIN-SUCCESSOR",
+		STA: core.StateAccepted,
+		EVO: core.Evolution{
+			Supersedes: predecessor.IDN,
+		},
+	}
+
+	st.Accepted[predecessor.IDN] = predecessor
+	st.Accepted[successor.IDN] = successor
+
+	signal := core.EmergION{
+		IDN: "E-EXECUTION-SIGNAL",
+		STA: core.StateAtGOV,
+		REL: map[string]string{
+			"source_kind":     "EXECUTION_RESULT",
+			"parent_emergion": predecessor.IDN,
+			"adapter":         "LOCAL_GEMMA",
+			"action":          "ANALYZE",
+		},
+	}
+
+	st.AtGOV[signal.IDN] = signal
+
+	if !executionAlreadyObserved(
+		st,
+		predecessor.IDN,
+		"LOCAL_GEMMA",
+		"ANALYZE",
+	) {
+		t.Fatal("exact predecessor execution observation was not detected")
+	}
+
+	if executionAlreadyObserved(
+		st,
+		successor.IDN,
+		"LOCAL_GEMMA",
+		"ANALYZE",
+	) {
+		t.Fatal("predecessor execution observation leaked across sovereign Kin boundary")
+	}
+}
