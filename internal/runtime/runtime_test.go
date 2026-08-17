@@ -1668,78 +1668,61 @@ func TestExecutionObservationRemainsConfinedToExactKinMember(t *testing.T) {
 	}
 }
 
-func TestCaptureSourceIdentityRemainsRuntimeOwned(t *testing.T) {
-	root := t.TempDir()
+func TestCaptureRejectsRuntimeOwnedSourceIdentityRelationships(t *testing.T) {
+	for _, key := range []string{
+		"source_hash",
+		"provenance",
+	} {
+		t.Run(key, func(t *testing.T) {
+			root := t.TempDir()
 
-	s, err := store.Open(filepath.Join(root, "state"))
-	if err != nil {
-		t.Fatal(err)
-	}
+			s, err := store.Open(filepath.Join(root, "state"))
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	sourceBytes := []byte("canonical source identity proof")
-	source := filepath.Join(root, "source-proof.txt")
-	if err := os.WriteFile(source, sourceBytes, 0600); err != nil {
-		t.Fatal(err)
-	}
+			sourceBytes := []byte("canonical source identity proof")
+			source := filepath.Join(root, "source-proof.txt")
+			if err := os.WriteFile(source, sourceBytes, 0600); err != nil {
+				t.Fatal(err)
+			}
 
-	r := Runtime{
-		Store: s,
-		Reasoner: lineageReasoner{
-			result: reason.Result{
-				Summary: "source identity spoof attempt",
-				Relationships: map[string]string{
-					"source_name": "fake-source.txt",
-					"source_hash": "FAKE-SOURCE-HASH",
-					"provenance":  "FAKE-PROVENANCE",
+			r := Runtime{
+				Store: s,
+				Reasoner: lineageReasoner{
+					result: reason.Result{
+						Summary: "source identity spoof attempt",
+						Relationships: map[string]string{
+							"source_name": "source-proof.txt",
+							key:           "FAKE-RUNTIME-SOURCE-AUTHORITY",
+						},
+						Capabilities: []string{"OBS"},
+						Facts:        []string{"source_preserved"},
+						Risk:         "L",
+					},
 				},
-				Capabilities: []string{"OBS"},
-				Facts:        []string{"source_preserved"},
-				Risk:         "L",
-			},
-		},
-	}
+			}
 
-	em, duplicate, err := r.Capture(
-		context.Background(),
-		source,
-		false,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if duplicate {
-		t.Fatal("new source unexpectedly treated as duplicate")
-	}
+			_, _, err = r.Capture(
+				context.Background(),
+				source,
+				false,
+			)
+			if err == nil {
+				t.Fatalf("runtime-owned source relationship %q unexpectedly admitted", key)
+			}
 
-	expectedHash := store.Hash(sourceBytes)
-	if em.MEM.SourceHash != expectedHash {
-		t.Fatalf(
-			"runtime source identity changed: got %q want %q",
-			em.MEM.SourceHash,
-			expectedHash,
-		)
-	}
-
-	if em.MEM.Provenance != "local_dropzone" {
-		t.Fatalf(
-			"runtime provenance changed: got %q want local_dropzone",
-			em.MEM.Provenance,
-		)
-	}
-
-	expectedID := "E-" + strings.ToUpper(expectedHash[:16])
-	if em.IDN != expectedID {
-		t.Fatalf(
-			"runtime EmergION identity changed: got %q want %q",
-			em.IDN,
-			expectedID,
-		)
-	}
-
-	if em.REL["source_hash"] != "FAKE-SOURCE-HASH" {
-		t.Fatal("test did not preserve non-authoritative source_hash observation")
-	}
-	if em.REL["provenance"] != "FAKE-PROVENANCE" {
-		t.Fatal("test did not preserve non-authoritative provenance observation")
+			events, eventsErr := s.Events()
+			if eventsErr != nil {
+				t.Fatal(eventsErr)
+			}
+			if len(events) != 0 {
+				t.Fatalf(
+					"rejected runtime-owned source relationship %q wrote %d event(s)",
+					key,
+					len(events),
+				)
+			}
+		})
 	}
 }

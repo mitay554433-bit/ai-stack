@@ -560,6 +560,8 @@ func (r Runtime) validateLineage(analysis *reason.Result) error {
 			"successor",
 			"kin",
 			"lineage",
+			"source_hash",
+			"provenance",
 		} {
 			if value := strings.TrimSpace(analysis.Relationships[key]); value != "" {
 				return fmt.Errorf(
