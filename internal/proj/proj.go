@@ -650,3 +650,110 @@ func compileCPSL(st core.State) ([]cpsl, error) {
 
 	return out, nil
 }
+
+type saw struct {
+	ID           string
+	SAABID       string
+	MemberPRMIDs []string
+	Capabilities []string
+	BuildNodes   []core.BuildNode
+	BuildEdges   []core.BuildEdge
+	CPSL         string
+}
+
+type libEntry struct {
+	SAWID        string
+	SAABID       string
+	MemberPRMIDs []string
+	Capabilities []string
+}
+
+func extractSAWs(st core.State) ([]saw, error) {
+	assemblies, err := deriveSAABs(st)
+	if err != nil {
+		return nil, err
+	}
+
+	programs, err := compileCPSL(st)
+	if err != nil {
+		return nil, err
+	}
+
+	cpslBySAAB := make(map[string]cpsl, len(programs))
+	for _, program := range programs {
+		if _, exists := cpslBySAAB[program.SAABID]; exists {
+			return nil, fmt.Errorf(
+				"duplicate CPSL for SAAB %s",
+				program.SAABID,
+			)
+		}
+		cpslBySAAB[program.SAABID] = program
+	}
+
+	out := make([]saw, 0, len(assemblies))
+
+	for _, assembly := range assemblies {
+		program, ok := cpslBySAAB[assembly.ID]
+		if !ok {
+			return nil, fmt.Errorf(
+				"SAW missing CPSL for SAAB %s",
+				assembly.ID,
+			)
+		}
+
+		item := saw{
+			ID:           "SAW:" + assembly.ID,
+			SAABID:       assembly.ID,
+			MemberPRMIDs: append([]string(nil), assembly.MemberPRMIDs...),
+			Capabilities: append([]string(nil), assembly.Capabilities...),
+			BuildNodes:   append([]core.BuildNode(nil), assembly.BuildNodes...),
+			BuildEdges:   append([]core.BuildEdge(nil), assembly.BuildEdges...),
+			CPSL:         program.Program,
+		}
+
+		out = append(out, item)
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ID < out[j].ID
+	})
+
+	return out, nil
+}
+
+func buildLIB(st core.State) ([]libEntry, error) {
+	artifacts, err := extractSAWs(st)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]libEntry, 0, len(artifacts))
+	seen := map[string]bool{}
+
+	for _, artifact := range artifacts {
+		if artifact.ID == "" {
+			return nil, fmt.Errorf("LIB rejected empty SAW identity")
+		}
+
+		if seen[artifact.ID] {
+			return nil, fmt.Errorf(
+				"LIB rejected duplicate SAW identity %s",
+				artifact.ID,
+			)
+		}
+		seen[artifact.ID] = true
+
+		out = append(out, libEntry{
+			SAWID:        artifact.ID,
+			SAABID:       artifact.SAABID,
+			MemberPRMIDs: append([]string(nil), artifact.MemberPRMIDs...),
+			Capabilities: append([]string(nil), artifact.Capabilities...),
+		})
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].SAWID < out[j].SAWID
+	})
+
+	return out, nil
+}

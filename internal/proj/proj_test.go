@@ -683,3 +683,233 @@ func TestCPSLCompilesDeterministicSAABStructure(t *testing.T) {
 		t.Fatal("CPSL compilation mutated source PRM build graph")
 	}
 }
+
+func TestSAWExtractsDeterministicGovernedArtifact(t *testing.T) {
+	a := core.EmergION{
+		IDN: "E-SAW-A",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "saw-a",
+		},
+		REL: map[string]string{
+			"COMPOSITION_KIN": "E-SAW-B",
+		},
+		CAP: []string{
+			"PROGRAM",
+			"ANALYZE",
+		},
+		EVO: core.Evolution{
+			Metadata: &core.Metadata{
+				BuildNodes: []core.BuildNode{
+					{
+						ID:     "source",
+						System: "SOURCE",
+						State:  "READY",
+					},
+				},
+			},
+		},
+	}
+
+	b := core.EmergION{
+		IDN: "E-SAW-B",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "saw-b",
+		},
+		CAP: []string{
+			"SIMULATE",
+		},
+	}
+
+	st := core.EmptyState()
+	st.Accepted[a.IDN] = a
+	st.Accepted[b.IDN] = b
+
+	first, err := extractSAWs(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := extractSAWs(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(first) != 1 || len(second) != 1 {
+		t.Fatalf(
+			"SAW counts = %d %d want 1 1",
+			len(first),
+			len(second),
+		)
+	}
+
+	if first[0].ID != second[0].ID {
+		t.Fatalf(
+			"SAW identity not deterministic: %q %q",
+			first[0].ID,
+			second[0].ID,
+		)
+	}
+
+	if first[0].CPSL != second[0].CPSL {
+		t.Fatal("SAW CPSL changed across deterministic rebuild")
+	}
+
+	if first[0].SAABID == "" {
+		t.Fatal("SAW lost source SAAB identity")
+	}
+
+	if len(first[0].MemberPRMIDs) != 2 {
+		t.Fatalf(
+			"SAW member PRMs = %#v",
+			first[0].MemberPRMIDs,
+		)
+	}
+
+	if first[0].MemberPRMIDs[0] != a.IDN ||
+		first[0].MemberPRMIDs[1] != b.IDN {
+		t.Fatalf(
+			"SAW member identities = %#v",
+			first[0].MemberPRMIDs,
+		)
+	}
+
+	if !strings.Contains(first[0].CPSL, "CPSL/1\n") {
+		t.Fatalf("SAW did not preserve CPSL:\n%s", first[0].CPSL)
+	}
+
+	if st.Accepted[a.IDN].IDN != a.IDN ||
+		st.Accepted[b.IDN].IDN != b.IDN {
+		t.Fatal("SAW extraction mutated accepted EmergIONs")
+	}
+}
+
+func TestSAWDoesNotExistWithoutGovernedComposition(t *testing.T) {
+	em := core.EmergION{
+		IDN: "E-SAW-SINGLE",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "saw-single",
+		},
+		CAP: []string{"PROGRAM"},
+	}
+
+	st := core.EmptyState()
+	st.Accepted[em.IDN] = em
+
+	artifacts, err := extractSAWs(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(artifacts) != 0 {
+		t.Fatalf(
+			"SAW fabricated without governed composition: %#v",
+			artifacts,
+		)
+	}
+}
+
+func TestLIBIndexesDerivedSAWsOnly(t *testing.T) {
+	a := core.EmergION{
+		IDN: "E-LIB-A",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "lib-a",
+		},
+		REL: map[string]string{
+			"COMPOSITION_KIN": "E-LIB-B",
+		},
+		CAP: []string{"PROGRAM"},
+	}
+
+	b := core.EmergION{
+		IDN: "E-LIB-B",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "lib-b",
+		},
+		CAP: []string{"ANALYZE"},
+	}
+
+	unrelated := core.EmergION{
+		IDN: "E-LIB-UNRELATED",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "lib-unrelated",
+		},
+		CAP: []string{"OBS"},
+	}
+
+	st := core.EmptyState()
+	st.Accepted[a.IDN] = a
+	st.Accepted[b.IDN] = b
+	st.Accepted[unrelated.IDN] = unrelated
+
+	first, err := buildLIB(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := buildLIB(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(first) != 1 || len(second) != 1 {
+		t.Fatalf(
+			"LIB counts = %d %d want 1 1",
+			len(first),
+			len(second),
+		)
+	}
+
+	if first[0].SAWID != second[0].SAWID {
+		t.Fatalf(
+			"LIB rebuild changed SAW identity: %q %q",
+			first[0].SAWID,
+			second[0].SAWID,
+		)
+	}
+
+	if first[0].SAABID == "" {
+		t.Fatal("LIB entry lost SAAB lineage")
+	}
+
+	if len(first[0].MemberPRMIDs) != 2 {
+		t.Fatalf(
+			"LIB member PRMs = %#v",
+			first[0].MemberPRMIDs,
+		)
+	}
+
+	for _, id := range first[0].MemberPRMIDs {
+		if id == unrelated.IDN {
+			t.Fatal("unrelated accepted PRM entered LIB")
+		}
+	}
+
+	if len(st.Accepted) != 3 {
+		t.Fatal("LIB rebuild mutated accepted state")
+	}
+}
+
+func TestLIBDoesNotBecomeAuthority(t *testing.T) {
+	st := core.EmptyState()
+
+	entries, err := buildLIB(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(entries) != 0 {
+		t.Fatalf("empty accepted state produced LIB entries: %#v", entries)
+	}
+
+	if len(st.Accepted) != 0 ||
+		len(st.Approved) != 0 ||
+		len(st.AtGOV) != 0 {
+		t.Fatal("LIB derivation created authoritative state")
+	}
+}
