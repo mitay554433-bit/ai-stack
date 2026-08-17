@@ -1,6 +1,7 @@
 package field
 
 import (
+	"emergion-sovereign-runtime/internal/adapters"
 	"strings"
 	"testing"
 	"time"
@@ -202,5 +203,82 @@ func TestGatedActionRequiresHumanFinal(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "requires HUMAN_FINAL") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestActionAuthorizationRemainsConfinedToExactKinMember(t *testing.T) {
+	now := time.Now().UTC()
+
+	predecessor := core.EmergION{
+		IDN: "E-KIN-Q-PREDECESSOR",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "kin-q-predecessor",
+			Codec:      "test",
+			Bytes:      1,
+			Stored:     1,
+			Summary:    "accepted predecessor",
+			Provenance: "test",
+		},
+		CAP: []string{"SEND"},
+		VAL: core.Validation{
+			Facts:  []string{"bounded"},
+			Risk:   "L",
+			Recoil: true,
+			WVC:    true,
+		},
+		EVO: core.Evolution{
+			Version: 1,
+			Metadata: &core.Metadata{
+				Topology:   core.TopologyDodecahedronV1,
+				CapturedAt: now,
+				Facets: []core.Facet{
+					core.FacetAnalyticsForecast,
+				},
+			},
+		},
+	}
+
+	successor := predecessor
+	successor.IDN = "E-KIN-Q-SUCCESSOR"
+	successor.MEM.SourceHash = "kin-q-successor"
+	successor.MEM.Summary = "accepted successor"
+	successor.EVO.Supersedes = predecessor.IDN
+
+	st := core.EmptyState()
+	st.Accepted[predecessor.IDN] = predecessor
+	st.Accepted[successor.IDN] = successor
+
+	st.ActionAuthorizations = append(
+		st.ActionAuthorizations,
+		core.ActionAuthorizationReceipt{
+			EventID:    "EV-Q-KIN-PROOF",
+			EmergIONID: predecessor.IDN,
+			Adapter:    "EMAIL",
+			Action:     "SEND",
+			Authority:  "HUMAN_FINAL",
+			Authorized: true,
+			At:         now,
+		},
+	)
+
+	if _, err := adapters.PrepareExecution(
+		st,
+		predecessor.IDN,
+		"EMAIL",
+		"SEND",
+		false,
+	); err != nil {
+		t.Fatalf("exact Kin member authorization rejected: %v", err)
+	}
+
+	if _, err := adapters.PrepareExecution(
+		st,
+		successor.IDN,
+		"EMAIL",
+		"SEND",
+		false,
+	); err == nil {
+		t.Fatal("predecessor Q authorization leaked across sovereign Kin boundary")
 	}
 }
