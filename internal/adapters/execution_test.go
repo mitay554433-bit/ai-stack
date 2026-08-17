@@ -111,9 +111,6 @@ func TestPrepareExecutionAcceptsHumanFinalQ(t *testing.T) {
 	if request.AuthorizationID != "EV-Q-PROOF" {
 		t.Fatalf("authorization ID = %q want EV-Q-PROOF", request.AuthorizationID)
 	}
-	if request.AuthorizationID != "EV-Q-PROOF" {
-		t.Fatalf("authorization ID = %q want EV-Q-PROOF", request.AuthorizationID)
-	}
 }
 
 func TestPrepareExecutionDoesNotMutateAuthorizationState(t *testing.T) {
