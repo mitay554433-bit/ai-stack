@@ -82,6 +82,7 @@ type prm struct {
 	Facets           []core.Facet
 	BuildNodes       []core.BuildNode
 	BuildEdges       []core.BuildEdge
+	Monetization     *core.Monetization
 	Delta            []string
 }
 
@@ -113,6 +114,10 @@ func crystallizePRMs(st core.State) ([]prm, error) {
 			item.Facets = append([]core.Facet(nil), em.EVO.Metadata.Facets...)
 			item.BuildNodes = append([]core.BuildNode(nil), em.EVO.Metadata.BuildNodes...)
 			item.BuildEdges = append([]core.BuildEdge(nil), em.EVO.Metadata.BuildEdges...)
+			if em.EVO.Metadata.Monetization != nil {
+				value := *em.EVO.Metadata.Monetization
+				item.Monetization = &value
+			}
 		}
 
 		out = append(out, item)
@@ -349,11 +354,20 @@ type saabLink struct {
 	Kind    string
 }
 
+type commercialProjection struct {
+	SourcePRMID string
+	Model       string
+	Customer    string
+	Value       string
+	RevenuePath string
+}
+
 type saab struct {
 	ID               string
 	MemberPRMIDs     []string
 	KinRoots         []string
 	Capabilities     []string
+	Commercial       []commercialProjection
 	CompositionLinks []saabLink
 	BuildNodes       []core.BuildNode
 	BuildEdges       []core.BuildEdge
@@ -470,6 +484,19 @@ func deriveSAABs(st core.State) ([]saab, error) {
 
 			if item.KinRoot != "" {
 				kinSet[item.KinRoot] = true
+			}
+
+			if item.Monetization != nil {
+				assembly.Commercial = append(
+					assembly.Commercial,
+					commercialProjection{
+						SourcePRMID: memberID,
+						Model:       item.Monetization.Model,
+						Customer:    item.Monetization.Customer,
+						Value:       item.Monetization.Value,
+						RevenuePath: item.Monetization.RevenuePath,
+					},
+				)
 			}
 
 			for _, capability := range item.Capabilities {
@@ -656,6 +683,7 @@ type saw struct {
 	SAABID       string
 	MemberPRMIDs []string
 	Capabilities []string
+	Commercial   []commercialProjection
 	BuildNodes   []core.BuildNode
 	BuildEdges   []core.BuildEdge
 	CPSL         string
@@ -666,6 +694,7 @@ type libEntry struct {
 	SAABID       string
 	MemberPRMIDs []string
 	Capabilities []string
+	Commercial   []commercialProjection
 }
 
 func extractSAWs(st core.State) ([]saw, error) {
@@ -706,6 +735,7 @@ func extractSAWs(st core.State) ([]saw, error) {
 			SAABID:       assembly.ID,
 			MemberPRMIDs: append([]string(nil), assembly.MemberPRMIDs...),
 			Capabilities: append([]string(nil), assembly.Capabilities...),
+			Commercial:   append([]commercialProjection(nil), assembly.Commercial...),
 			BuildNodes:   append([]core.BuildNode(nil), assembly.BuildNodes...),
 			BuildEdges:   append([]core.BuildEdge(nil), assembly.BuildEdges...),
 			CPSL:         program.Program,
@@ -748,12 +778,65 @@ func buildLIB(st core.State) ([]libEntry, error) {
 			SAABID:       artifact.SAABID,
 			MemberPRMIDs: append([]string(nil), artifact.MemberPRMIDs...),
 			Capabilities: append([]string(nil), artifact.Capabilities...),
+			Commercial:   append([]commercialProjection(nil), artifact.Commercial...),
 		})
 	}
 
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].SAWID < out[j].SAWID
 	})
+
+	return out, nil
+}
+
+type SAWSource struct {
+	ID      string
+	Content []byte
+}
+
+func SAWSources(st core.State) ([]SAWSource, error) {
+	artifacts, err := extractSAWs(st)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]SAWSource, 0, len(artifacts))
+
+	for _, artifact := range artifacts {
+		var b strings.Builder
+
+		b.WriteString("SAW/1\n")
+		fmt.Fprintf(&b, "I|%q\n", artifact.ID)
+		fmt.Fprintf(&b, "A|%q\n", artifact.SAABID)
+
+		for _, member := range artifact.MemberPRMIDs {
+			fmt.Fprintf(&b, "P|%q\n", member)
+		}
+
+		for _, capability := range artifact.Capabilities {
+			fmt.Fprintf(&b, "C|%q\n", capability)
+		}
+
+		for _, commercial := range artifact.Commercial {
+			fmt.Fprintf(
+				&b,
+				"M|%q|%q|%q|%q|%q\n",
+				commercial.SourcePRMID,
+				commercial.Model,
+				commercial.Customer,
+				commercial.Value,
+				commercial.RevenuePath,
+			)
+		}
+
+		fmt.Fprintf(&b, "X|%q\n", artifact.CPSL)
+		b.WriteString("Z\n")
+
+		out = append(out, SAWSource{
+			ID:      artifact.ID,
+			Content: []byte(b.String()),
+		})
+	}
 
 	return out, nil
 }

@@ -913,3 +913,171 @@ func TestLIBDoesNotBecomeAuthority(t *testing.T) {
 		t.Fatal("LIB derivation created authoritative state")
 	}
 }
+
+func TestCommercialMetadataSurvivesPRMThroughLIB(t *testing.T) {
+	a := core.EmergION{
+		IDN: "E-COMMERCIAL-A",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "commercial-a",
+		},
+		REL: map[string]string{
+			"COMPOSITION_KIN": "E-COMMERCIAL-B",
+		},
+		CAP: []string{"PROGRAM"},
+		EVO: core.Evolution{
+			Metadata: &core.Metadata{
+				Monetization: &core.Monetization{
+					Model:       "license",
+					Customer:    "enterprise",
+					Value:       "governed composition",
+					RevenuePath: "approved deployment",
+				},
+			},
+		},
+	}
+
+	b := core.EmergION{
+		IDN: "E-COMMERCIAL-B",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "commercial-b",
+		},
+		CAP: []string{"ANALYZE"},
+	}
+
+	st := core.EmptyState()
+	st.Accepted[a.IDN] = a
+	st.Accepted[b.IDN] = b
+
+	prms, err := crystallizePRMs(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var sourcePRM *prm
+	for i := range prms {
+		if prms[i].SourceEmergIONID == a.IDN {
+			sourcePRM = &prms[i]
+			break
+		}
+	}
+
+	if sourcePRM == nil || sourcePRM.Monetization == nil {
+		t.Fatal("governed monetization did not reach PRM")
+	}
+
+	assemblies, err := deriveSAABs(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assemblies) != 1 || len(assemblies[0].Commercial) != 1 {
+		t.Fatalf("SAAB commercial projection = %#v", assemblies)
+	}
+
+	artifacts, err := extractSAWs(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(artifacts) != 1 || len(artifacts[0].Commercial) != 1 {
+		t.Fatalf("SAW commercial projection = %#v", artifacts)
+	}
+
+	entries, err := buildLIB(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || len(entries[0].Commercial) != 1 {
+		t.Fatalf("LIB commercial projection = %#v", entries)
+	}
+
+	got := entries[0].Commercial[0]
+	if got.SourcePRMID != a.IDN ||
+		got.Model != "license" ||
+		got.Customer != "enterprise" ||
+		got.Value != "governed composition" ||
+		got.RevenuePath != "approved deployment" {
+		t.Fatalf("commercial projection changed: %#v", got)
+	}
+
+	if st.Accepted[a.IDN].EVO.Metadata.Monetization.Model != "license" {
+		t.Fatal("commercial projection mutated accepted state")
+	}
+}
+
+func TestSAWSourceIsDeterministicAndNonAuthoritative(t *testing.T) {
+	a := core.EmergION{
+		IDN: "E-SOURCE-A",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "source-a",
+		},
+		REL: map[string]string{
+			"COMPOSITION_KIN": "E-SOURCE-B",
+		},
+		CAP: []string{"ANALYZE"},
+		EVO: core.Evolution{
+			Metadata: &core.Metadata{
+				Monetization: &core.Monetization{
+					Model:       "license",
+					Customer:    "customer",
+					Value:       "value",
+					RevenuePath: "delivery",
+				},
+			},
+		},
+	}
+
+	b := core.EmergION{
+		IDN: "E-SOURCE-B",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			SourceHash: "source-b",
+		},
+	}
+
+	st := core.EmptyState()
+	st.Accepted[a.IDN] = a
+	st.Accepted[b.IDN] = b
+
+	first, err := SAWSources(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	second, err := SAWSources(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(first) != 1 || len(second) != 1 {
+		t.Fatalf("SAW source counts = %d %d", len(first), len(second))
+	}
+
+	if first[0].ID != second[0].ID ||
+		string(first[0].Content) != string(second[0].Content) {
+		t.Fatal("SAW source representation is not deterministic")
+	}
+
+	content := string(first[0].Content)
+
+	required := []string{
+		"SAW/1\n",
+		`P|"E-SOURCE-A"`,
+		`P|"E-SOURCE-B"`,
+		`M|"E-SOURCE-A"|"license"|"customer"|"value"|"delivery"`,
+		"X|",
+		"Z\n",
+	}
+
+	for _, want := range required {
+		if !strings.Contains(content, want) {
+			t.Fatalf("SAW source missing %q\n%s", want, content)
+		}
+	}
+
+	if st.Accepted[a.IDN].STA != core.StateAccepted ||
+		st.Accepted[b.IDN].STA != core.StateAccepted {
+		t.Fatal("SAW source projection mutated authoritative state")
+	}
+}
