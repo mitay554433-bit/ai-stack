@@ -1551,3 +1551,68 @@ func TestExecutionAlreadyObservedUsesCanonicalFieldLineage(t *testing.T) {
 		t.Fatal("different action was incorrectly suppressed")
 	}
 }
+
+func TestCaptureRejectsRuntimeOwnedExecutionLineageRelationships(t *testing.T) {
+	for _, key := range []string{
+		"parent_emergion",
+		"authorization_event",
+		"parent",
+		"origin",
+		"predecessor",
+		"ancestor",
+		"successor",
+		"kin",
+		"lineage",
+	} {
+		t.Run(key, func(t *testing.T) {
+			root := t.TempDir()
+
+			s, err := store.Open(filepath.Join(root, "state"))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			source := filepath.Join(root, "candidate.txt")
+			if err := os.WriteFile(source, []byte("bounded candidate"), 0600); err != nil {
+				t.Fatal(err)
+			}
+
+			r := Runtime{
+				Store: s,
+				Reasoner: lineageReasoner{
+					result: reason.Result{
+						Summary: "bounded candidate",
+						Relationships: map[string]string{
+							"source_name": "candidate.txt",
+							key:           "UNTRUSTED-LINEAGE",
+						},
+						Capabilities: []string{"OBS"},
+						Facts:        []string{"source_preserved"},
+						Risk:         "L",
+					},
+				},
+			}
+
+			_, _, err = r.Capture(
+				context.Background(),
+				source,
+				false,
+			)
+			if err == nil {
+				t.Fatalf("runtime-owned relationship %q unexpectedly admitted", key)
+			}
+
+			events, eventsErr := s.Events()
+			if eventsErr != nil {
+				t.Fatal(eventsErr)
+			}
+			if len(events) != 0 {
+				t.Fatalf(
+					"rejected runtime-owned relationship %q wrote %d event(s)",
+					key,
+					len(events),
+				)
+			}
+		})
+	}
+}

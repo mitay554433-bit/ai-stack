@@ -549,6 +549,26 @@ func deriveDelta(previous core.EmergION, analysis reason.Result) []string {
 }
 
 func (r Runtime) validateLineage(analysis *reason.Result) error {
+	if r.Reasoner.Name() != "execution-signal" {
+		for _, key := range []string{
+			"parent_emergion",
+			"authorization_event",
+			"parent",
+			"origin",
+			"predecessor",
+			"ancestor",
+			"successor",
+			"kin",
+			"lineage",
+		} {
+			if value := strings.TrimSpace(analysis.Relationships[key]); value != "" {
+				return fmt.Errorf(
+					"lineage rejected: relationship %q is runtime-owned",
+					key,
+				)
+			}
+		}
+	}
 	returnedID := strings.TrimSpace(r.ReturnedPredecessor)
 
 	events, err := r.Store.Events()
