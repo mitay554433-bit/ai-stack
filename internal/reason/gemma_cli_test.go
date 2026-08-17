@@ -1,6 +1,9 @@
 package reason
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCleanFacets(t *testing.T) {
 	got := cleanFacets([]string{"PROGRAM_FORGE", "INVALID", "PROGRAM_FORGE", "GRANT_FUNDING"})
@@ -109,5 +112,62 @@ func TestArchonymPrimitiveRoundTrip(t *testing.T) {
 	})
 	if calibrated.Archonym != "VERITEX CORE" {
 		t.Fatalf("calibrated Archonym = %q", calibrated.Archonym)
+	}
+}
+
+func TestCalibrateNormalizesRelationshipsWithoutChangingIdentity(t *testing.T) {
+	longValue := strings.Repeat("accepted-context-", 20)
+
+	got := Calibrate(Result{
+		Summary: "bounded",
+		Risk:    "L",
+		Relationships: map[string]string{
+			" source ":       " probe ",
+			"empty-value":    "   ",
+			"   ":            "discard",
+			" relationship ": " " + longValue + " ",
+		},
+	})
+
+	if got.Relationships["source"] != "probe" {
+		t.Fatalf("normalized source relationship = %q", got.Relationships["source"])
+	}
+
+	if got.Relationships["relationship"] != longValue {
+		t.Fatalf(
+			"long relationship identity changed: got length %d want %d",
+			len(got.Relationships["relationship"]),
+			len(longValue),
+		)
+	}
+
+	if _, ok := got.Relationships["empty-value"]; ok {
+		t.Fatal("empty relationship value survived calibration")
+	}
+
+	if _, ok := got.Relationships[""]; ok {
+		t.Fatal("empty relationship key survived calibration")
+	}
+}
+
+func TestCalibrateRelationshipTrimCollisionIsDeterministic(t *testing.T) {
+	got := Calibrate(Result{
+		Summary: "bounded",
+		Risk:    "L",
+		Relationships: map[string]string{
+			" composition ": "first",
+			"composition":   "second",
+		},
+	})
+
+	if len(got.Relationships) != 1 {
+		t.Fatalf("trim collision produced %d relationships", len(got.Relationships))
+	}
+
+	if got.Relationships["composition"] != "first" {
+		t.Fatalf(
+			"deterministic trim collision = %q want first",
+			got.Relationships["composition"],
+		)
 	}
 }

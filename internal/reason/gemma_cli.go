@@ -445,9 +445,7 @@ func Calibrate(r Result) Result {
 	if len(r.Summary) > 480 {
 		r.Summary = r.Summary[:480]
 	}
-	if r.Relationships == nil {
-		r.Relationships = map[string]string{}
-	}
+	r.Relationships = cleanRelationships(r.Relationships)
 	if r.Risk != "L" && r.Risk != "M" && r.Risk != "H" {
 		r.Risk = "M"
 	}
@@ -471,6 +469,33 @@ func Calibrate(r Result) Result {
 		}
 	}
 	return r
+}
+
+func cleanRelationships(in map[string]string) map[string]string {
+	out := map[string]string{}
+	if in == nil {
+		return out
+	}
+
+	keys := make([]string, 0, len(in))
+	for key := range in {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		cleanKey := strings.TrimSpace(key)
+		cleanValue := strings.TrimSpace(in[key])
+		if cleanKey == "" || cleanValue == "" {
+			continue
+		}
+		if _, exists := out[cleanKey]; exists {
+			continue
+		}
+		out[cleanKey] = cleanValue
+	}
+
+	return out
 }
 
 func cleanBuildGraph(nodes []BuildNode, edges []BuildEdge) ([]BuildNode, []BuildEdge) {
