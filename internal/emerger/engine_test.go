@@ -96,7 +96,8 @@ type maximalReasoner struct{}
 
 func (maximalReasoner) Analyze(context.Context, reason.Input) (reason.Result, error) {
 	return reason.Result{
-		Summary: "maximal semantic proposal",
+		Summary:  "maximal semantic proposal",
+		Archonym: "MAXIMAL PROPOSAL",
 		Relationships: map[string]string{
 			"source_name": "claimed-source",
 			"source_kind": "PROGRAM",
@@ -227,5 +228,9 @@ func TestEmergerCannotSelfAuthorizeOrSelfVerify(t *testing.T) {
 			"prompt schema = %q want MXPD/2",
 			em.EVO.Metadata.PromptSchema,
 		)
+	}
+
+	if em.EVO.Metadata.Archonym != "MAXIMAL PROPOSAL" {
+		t.Fatalf("Archonym = %q want MAXIMAL PROPOSAL", em.EVO.Metadata.Archonym)
 	}
 }

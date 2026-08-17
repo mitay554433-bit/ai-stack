@@ -257,7 +257,7 @@ func buildPrompt(name, content, governedState string) string {
 	return `@L:MXPD/2
 @T:REDUCE
 AX[S!=T;M!=T;GOV>D;REG>A;NI;FC]
-OUT[S|x;K|L|M|H;L|k|v;C|x;F|x;G|x;U|id;T|facet;N|id|system|state;E|from|to|kind;M|model|customer|value|revenue_path;Z]
+OUT[S|x;H|archonym;K|L|M|H;L|k|v;C|x;F|x;G|x;U|id;T|facet;N|id|system|state;E|from|to|kind;M|model|customer|value|revenue_path;Z]
 SEM[F=required_mechanism|algorithm|equation|invariant|state_transition;C=transferable_behavior;L=essential_relation;G=missing_mechanism|nonessential_baggage;N=component;E=flow]
 KEEP[math,state,order,constraints,input,transform,output]
 DROP_AS_G_ONLY_IF_NONESSENTIAL[wrapper,serialization,SDK,framework,presentation,duplication,dependency_plumbing]
@@ -269,6 +269,7 @@ OUTPUT CONTRACT:
 - Use the vertical pipe character | as the delimiter.
 - Never replace | with a colon.
 - S| MUST contain a non-empty one-sentence summary.
+- H| MAY contain one canonical semantic Archonym; omit it when unsupported.
 - K| MUST be exactly K|L, K|M, or K|H.
 - F| contains an evidenced fact.
 - C| contains a transferable capability.
@@ -351,6 +352,10 @@ func parseResult(s string) (Result, error) {
 					From: strings.TrimSpace(p[1]), To: strings.TrimSpace(p[2]), Kind: strings.TrimSpace(p[3]),
 				})
 			}
+		case "ARCHONYM", "H":
+			if len(p) == 2 {
+				r.Archonym = strings.TrimSpace(p[1])
+			}
 		case "MONEY", "M":
 			if len(p) == 5 {
 				r.Monetization = &Monetization{
@@ -374,6 +379,10 @@ func FormatResult(r Result) string {
 
 	if r.Summary != "" {
 		fmt.Fprintf(&b, "S|%s\n", r.Summary)
+	}
+
+	if r.Archonym != "" {
+		fmt.Fprintf(&b, "H|%s\n", r.Archonym)
 	}
 
 	for key, value := range r.Relationships {
@@ -429,6 +438,10 @@ func FormatResult(r Result) string {
 
 func Calibrate(r Result) Result {
 	r.Summary = strings.TrimSpace(r.Summary)
+	r.Archonym = cleanText(r.Archonym, 160)
+	if strings.EqualFold(r.Archonym, "null") {
+		r.Archonym = ""
+	}
 	if len(r.Summary) > 480 {
 		r.Summary = r.Summary[:480]
 	}

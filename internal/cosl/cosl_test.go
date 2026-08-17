@@ -62,6 +62,7 @@ func fullEvent() core.Event {
 					CapturedAt:   captured,
 					AIIntegrated: true,
 					PromptSchema: "EMERGER_LOGICAL_V2",
+					Archonym:     "COVERAGE PROTECTOR",
 					Facets: []core.Facet{
 						core.FacetEmergenceCapture,
 						core.FacetProgramForge,

@@ -60,6 +60,7 @@ func rows(st core.State) []row {
 
 type convergenceRow struct {
 	ID            string
+	Archonym      string
 	Kin           string
 	Summary       string
 	Topology      string
@@ -113,6 +114,7 @@ func convergenceRows(st core.State) ([]convergenceRow, error) {
 		row.Kin = strings.Join(kin, "; ")
 
 		if e.EVO.Metadata != nil {
+			row.Archonym = e.EVO.Metadata.Archonym
 			row.Topology = string(e.EVO.Metadata.Topology)
 
 			facets := make([]string, 0, len(e.EVO.Metadata.Facets))
@@ -233,6 +235,7 @@ code{color:#a78bfa}
 <tr>
 <th>EmergION</th>
 <th>Meaning</th>
+<th>Archonym</th>
 <th>Kin</th>
 <th>Topology</th>
 <th>Facets</th>
@@ -247,6 +250,7 @@ code{color:#a78bfa}
 <tr>
 <td><code>{{.ID}}</code></td>
 <td>{{.Summary}}</td>
+<td>{{.Archonym}}</td>
 <td>{{.Kin}}</td>
 <td>{{.Topology}}</td>
 <td>{{.Facets}}</td>

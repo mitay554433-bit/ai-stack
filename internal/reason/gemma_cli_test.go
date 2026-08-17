@@ -79,3 +79,35 @@ func TestCalibrateNormalizesNullSupersedes(t *testing.T) {
 		t.Fatalf("null supersedes survived calibration: %q", got.Supersedes)
 	}
 }
+
+func TestArchonymPrimitiveRoundTrip(t *testing.T) {
+	want := Result{
+		Summary:  "bounded semantic identity",
+		Archonym: "VERITEX CORE",
+		Risk:     "L",
+	}
+
+	wire := FormatResult(want)
+
+	got, err := parseResult(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Archonym != want.Archonym {
+		t.Fatalf(
+			"Archonym roundtrip = %q want %q",
+			got.Archonym,
+			want.Archonym,
+		)
+	}
+
+	calibrated := Calibrate(Result{
+		Summary:  "bounded",
+		Archonym: "  VERITEX CORE  ",
+		Risk:     "L",
+	})
+	if calibrated.Archonym != "VERITEX CORE" {
+		t.Fatalf("calibrated Archonym = %q", calibrated.Archonym)
+	}
+}

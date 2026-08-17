@@ -84,6 +84,7 @@ func metadata(result reason.Result, aiIntegrated bool) *core.Metadata {
 		CapturedAt:   time.Now().UTC(),
 		AIIntegrated: aiIntegrated,
 		PromptSchema: "MXPD/2",
+		Archonym:     result.Archonym,
 	}
 	for _, facet := range result.Facets {
 		m.Facets = append(m.Facets, core.Facet(facet))

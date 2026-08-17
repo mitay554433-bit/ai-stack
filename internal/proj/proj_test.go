@@ -126,3 +126,37 @@ func TestSpatialConvergenceZoneDoesNotInventDanglingKin(t *testing.T) {
 		t.Fatal("dangling accepted Kin ancestry unexpectedly projected")
 	}
 }
+
+func TestSpatialConvergenceZoneProjectsGovernedArchonym(t *testing.T) {
+	em := core.EmergION{
+		IDN: "E-ARCHONYM",
+		STA: core.StateAccepted,
+		MEM: core.Memory{
+			Summary: "accepted semantic identity",
+		},
+		EVO: core.Evolution{
+			Metadata: &core.Metadata{
+				Archonym: "VERITEX CORE",
+			},
+		},
+	}
+
+	st := core.EmptyState()
+	st.Accepted[em.IDN] = em
+
+	rows, err := convergenceRows(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d want 1", len(rows))
+	}
+
+	if rows[0].Archonym != "VERITEX CORE" {
+		t.Fatalf(
+			"projected Archonym = %q want VERITEX CORE",
+			rows[0].Archonym,
+		)
+	}
+}

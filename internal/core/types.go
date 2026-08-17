@@ -88,6 +88,7 @@ type Metadata struct {
 	CapturedAt       time.Time     `json:"t"`
 	AIIntegrated     bool          `json:"a"`
 	PromptSchema     string        `json:"p,omitempty"`
+	Archonym         string        `json:"h,omitempty"`
 	Facets           []Facet       `json:"f,omitempty"`
 	BuildNodes       []BuildNode   `json:"n,omitempty"`
 	BuildEdges       []BuildEdge   `json:"e,omitempty"`
@@ -98,6 +99,12 @@ type Metadata struct {
 func (m *Metadata) Validate() error {
 	if m == nil {
 		return nil
+	}
+	if m.Archonym != "" {
+		archonym := strings.TrimSpace(m.Archonym)
+		if archonym == "" || archonym != m.Archonym || len(archonym) > 160 {
+			return fmt.Errorf("invalid Archonym %q", m.Archonym)
+		}
 	}
 	seenFieldObservation := map[string]bool{}
 	for _, observation := range m.FieldObservation {

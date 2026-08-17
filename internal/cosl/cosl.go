@@ -192,6 +192,10 @@ func writeMetadata(b *strings.Builder, value *core.Metadata) {
 		b.WriteString(";B=")
 		writeStrings(b, value.FieldObservation)
 	}
+	if value.Archonym != "" {
+		b.WriteString(";H=")
+		writeString(b, value.Archonym)
+	}
 	b.WriteByte('}')
 }
 
@@ -785,6 +789,16 @@ func (p *parser) metadataValue() (*core.Metadata, error) {
 			return nil, err
 		}
 	}
+	var archonym string
+	if strings.HasPrefix(p.s[p.i:], ";H=") {
+		if err := p.take(";H="); err != nil {
+			return nil, err
+		}
+		archonym, err = p.stringValue()
+		if err != nil {
+			return nil, err
+		}
+	}
 	if err := p.take("}"); err != nil {
 		return nil, err
 	}
@@ -794,6 +808,7 @@ func (p *parser) metadataValue() (*core.Metadata, error) {
 		CapturedAt:       capturedAt,
 		AIIntegrated:     ai,
 		PromptSchema:     prompt,
+		Archonym:         archonym,
 		Facets:           facets,
 		BuildNodes:       nodes,
 		BuildEdges:       edges,

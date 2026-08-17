@@ -10,6 +10,7 @@ type Input struct {
 
 type Result struct {
 	Summary       string
+	Archonym      string
 	Relationships map[string]string
 	Capabilities  []string
 	Facts         []string
