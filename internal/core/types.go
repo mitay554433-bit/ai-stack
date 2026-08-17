@@ -114,7 +114,16 @@ func (m *Metadata) Validate() error {
 			strings.HasPrefix(observation, "FIELD_REL_MATCH:") ||
 			strings.HasPrefix(observation, "FIELD_REL_VARIANT:") ||
 			strings.HasPrefix(observation, "FIELD_FACET_KNOWN:") ||
-			strings.HasPrefix(observation, "FIELD_FACET_NOVEL:")
+			strings.HasPrefix(observation, "FIELD_FACET_NOVEL:") ||
+			observation == "F0" ||
+			observation == "F_" ||
+			strings.HasPrefix(observation, "FC:K:") ||
+			strings.HasPrefix(observation, "FC:N:") ||
+			strings.HasPrefix(observation, "FR:N:") ||
+			strings.HasPrefix(observation, "FR:M:") ||
+			strings.HasPrefix(observation, "FR:V:") ||
+			strings.HasPrefix(observation, "FF:K:") ||
+			strings.HasPrefix(observation, "FF:N:")
 
 		if !valid {
 			return fmt.Errorf("invalid field observation %q", observation)

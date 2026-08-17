@@ -1403,13 +1403,13 @@ func TestDeriveFieldDeltaAgainstAcceptedBoundary(t *testing.T) {
 	got := deriveFieldDelta(accepted, analysis)
 
 	want := []string{
-		"FIELD_CAP_KNOWN:CMP",
-		"FIELD_CAP_NOVEL:VLD",
-		"FIELD_REL_VARIANT:domain",
-		"FIELD_REL_NOVEL:novel_key",
-		"FIELD_REL_MATCH:source_kind",
-		"FIELD_FACET_NOVEL:ANALYTICS_FORECAST",
-		"FIELD_FACET_KNOWN:PROGRAM_FORGE",
+		"FC:K:CMP",
+		"FC:N:VLD",
+		"FR:V:domain",
+		"FR:N:novel_key",
+		"FR:M:source_kind",
+		"FF:N:ANALYTICS_FORECAST",
+		"FF:K:PROGRAM_FORGE",
 	}
 
 	if !reflect.DeepEqual(got, want) {

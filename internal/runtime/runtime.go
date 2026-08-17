@@ -348,7 +348,7 @@ func deriveFieldDelta(
 	analysis reason.Result,
 ) []string {
 	if len(accepted) == 0 {
-		return []string{"FIELD_EMPTY"}
+		return []string{"F0"}
 	}
 
 	knownCaps := map[string]bool{}
@@ -391,9 +391,9 @@ func deriveFieldDelta(
 
 	for _, capability := range caps {
 		if knownCaps[capability] {
-			delta = append(delta, "FIELD_CAP_KNOWN:"+capability)
+			delta = append(delta, "FC:K:"+capability)
 		} else {
-			delta = append(delta, "FIELD_CAP_NOVEL:"+capability)
+			delta = append(delta, "FC:N:"+capability)
 		}
 	}
 
@@ -412,11 +412,11 @@ func deriveFieldDelta(
 
 		switch {
 		case !exists:
-			delta = append(delta, "FIELD_REL_NOVEL:"+key)
+			delta = append(delta, "FR:N:"+key)
 		case knownValues[value]:
-			delta = append(delta, "FIELD_REL_MATCH:"+key)
+			delta = append(delta, "FR:M:"+key)
 		default:
-			delta = append(delta, "FIELD_REL_VARIANT:"+key)
+			delta = append(delta, "FR:V:"+key)
 		}
 	}
 
@@ -428,14 +428,14 @@ func deriveFieldDelta(
 
 	for _, facet := range facets {
 		if knownFacets[facet] {
-			delta = append(delta, "FIELD_FACET_KNOWN:"+facet)
+			delta = append(delta, "FF:K:"+facet)
 		} else {
-			delta = append(delta, "FIELD_FACET_NOVEL:"+facet)
+			delta = append(delta, "FF:N:"+facet)
 		}
 	}
 
 	if len(delta) == 0 {
-		return []string{"FIELD_NO_STRUCTURAL_OBSERVATION"}
+		return []string{"F_"}
 	}
 
 	return delta
