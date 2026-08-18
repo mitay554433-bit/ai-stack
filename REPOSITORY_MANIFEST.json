@@ -163,18 +163,18 @@
   "release_binaries": [
     {
       "path": "dist/field-linux-amd64",
-      "bytes": 6451427,
-      "sha256": "940a7f7cde108527c6e4d37244a316190419ca4c9f55a9fdc624b3aac5601ee4"
+      "bytes": 6797165,
+      "sha256": "16696d74afe25349aa89ca917f98854a1fbe9129f72a1b5c40bb48a2152ffaf2"
     },
     {
       "path": "dist/field-linux-arm64",
-      "bytes": 6141950,
-      "sha256": "2ba37d4708b6f40fcccb98c96e4b022543e702b2c54f65e2fa989c8e29da1d4b"
+      "bytes": 6478160,
+      "sha256": "69ccf17112c2489d691bc0baf0bfa9f3c63a8106e64a79604c84179dace4acd6"
     },
     {
       "path": "dist/field-windows-amd64.exe",
-      "bytes": 6625792,
-      "sha256": "2124064c0d3c80e5386f0009266c4dceea68d27b6f5ee2c8f3595a6233afbf17"
+      "bytes": 6976000,
+      "sha256": "725f09b94ce825671dae6e7737ceb822bffd19c959355a48c6754fd814e9dabd"
     }
   ]
 }
