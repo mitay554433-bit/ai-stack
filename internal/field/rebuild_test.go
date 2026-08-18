@@ -332,7 +332,7 @@ func TestAcceptedKinRootSingleMember(t *testing.T) {
 		},
 	}
 
-	root, err := AcceptedKinRoot(accepted, "E-A")
+	root, err := AcceptedKinRoot(accepted, nil, "E-A")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +363,7 @@ func TestAcceptedKinRootTraversesAcceptedAncestry(t *testing.T) {
 		},
 	}
 
-	root, err := AcceptedKinRoot(accepted, "E-C")
+	root, err := AcceptedKinRoot(accepted, nil, "E-C")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -383,7 +383,7 @@ func TestAcceptedKinRootRejectsMissingAcceptedPredecessor(t *testing.T) {
 		},
 	}
 
-	if _, err := AcceptedKinRoot(accepted, "E-B"); err == nil {
+	if _, err := AcceptedKinRoot(accepted, nil, "E-B"); err == nil {
 		t.Fatal("missing accepted predecessor unexpectedly produced Kin root")
 	}
 }
@@ -406,7 +406,39 @@ func TestAcceptedKinRootRejectsCycle(t *testing.T) {
 		},
 	}
 
-	if _, err := AcceptedKinRoot(accepted, "E-A"); err == nil {
+	if _, err := AcceptedKinRoot(accepted, nil, "E-A"); err == nil {
 		t.Fatal("cyclic accepted Kin lineage unexpectedly produced root")
+	}
+}
+
+func TestAcceptedKinRootStopsAtGovernedReturnedPredecessor(t *testing.T) {
+	accepted := map[string]core.EmergION{
+		"E-SUCCESSOR": {
+			IDN: "E-SUCCESSOR",
+			STA: core.StateAccepted,
+			EVO: core.Evolution{
+				Supersedes: "E-RETURNED",
+			},
+		},
+	}
+
+	returned := map[string]core.EmergION{
+		"E-RETURNED": {
+			IDN: "E-RETURNED",
+			STA: core.StateReturned,
+		},
+	}
+
+	root, err := AcceptedKinRoot(
+		accepted,
+		returned,
+		"E-SUCCESSOR",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if root != "E-SUCCESSOR" {
+		t.Fatalf("root = %q want E-SUCCESSOR", root)
 	}
 }

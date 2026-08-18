@@ -156,6 +156,7 @@ func Rebuild(events []core.Event) (core.State, error) {
 
 func AcceptedKinRoot(
 	accepted map[string]core.EmergION,
+	returned map[string]core.EmergION,
 	id string,
 ) (string, error) {
 	current := strings.TrimSpace(id)
@@ -185,13 +186,18 @@ func AcceptedKinRoot(
 			return "", fmt.Errorf("Kin lineage self-reference at %s", current)
 		}
 
-		if _, ok := accepted[predecessor]; !ok {
-			return "", fmt.Errorf(
-				"Kin predecessor not REG-accepted: %s",
-				predecessor,
-			)
+		if _, ok := accepted[predecessor]; ok {
+			current = predecessor
+			continue
 		}
 
-		current = predecessor
+		if _, ok := returned[predecessor]; ok {
+			return current, nil
+		}
+
+		return "", fmt.Errorf(
+			"Kin predecessor not REG-accepted or HUMAN_FINAL RETURNED: %s",
+			predecessor,
+		)
 	}
 }

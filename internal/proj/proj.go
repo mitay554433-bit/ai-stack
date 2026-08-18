@@ -90,7 +90,7 @@ func crystallizePRMs(st core.State) ([]prm, error) {
 	out := make([]prm, 0, len(st.Accepted))
 
 	for _, em := range st.Accepted {
-		root, err := livefield.AcceptedKinRoot(st.Accepted, em.IDN)
+		root, err := livefield.AcceptedKinRoot(st.Accepted, st.Returned, em.IDN)
 		if err != nil {
 			return nil, err
 		}
@@ -156,7 +156,7 @@ func convergenceRows(st core.State) ([]convergenceRow, error) {
 		}
 
 		kin := []string{}
-		root, err := livefield.AcceptedKinRoot(st.Accepted, e.IDN)
+		root, err := livefield.AcceptedKinRoot(st.Accepted, st.Returned, e.IDN)
 		if err != nil {
 			return nil, err
 		}
