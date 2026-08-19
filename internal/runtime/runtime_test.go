@@ -2818,3 +2818,196 @@ func TestCoverageRecaptureUsesGenericFactRequirement(t *testing.T) {
 		t.Fatal("generic requirement RECAPTURE did not pass RECOIL/WVC")
 	}
 }
+
+func TestAcceptedCapabilityProvidersAreDeterministic(t *testing.T) {
+	st := core.EmptyState()
+
+	st.Accepted["E-PROVIDER-ANALYZE"] = core.EmergION{
+		IDN: "E-PROVIDER-ANALYZE",
+		STA: core.StateAccepted,
+		CAP: []string{"ANALYZE"},
+	}
+
+	st.Accepted["E-PROVIDER-CMP-Z"] = core.EmergION{
+		IDN: "E-PROVIDER-CMP-Z",
+		STA: core.StateAccepted,
+		CAP: []string{"CMP"},
+	}
+
+	st.Accepted["E-PROVIDER-CMP-A"] = core.EmergION{
+		IDN: "E-PROVIDER-CMP-A",
+		STA: core.StateAccepted,
+		CAP: []string{"CMP"},
+	}
+
+	st.Accepted["E-PROVIDER-RLT"] = core.EmergION{
+		IDN: "E-PROVIDER-RLT",
+		STA: core.StateAccepted,
+		CAP: []string{"RLT"},
+	}
+
+	first, ok := acceptedCapabilityProviders(
+		"DERIVE_CAPABILITY",
+		st,
+	)
+	if !ok {
+		t.Fatal("accepted provider composition unexpectedly unresolved")
+	}
+
+	second, ok := acceptedCapabilityProviders(
+		"DERIVE_CAPABILITY",
+		st,
+	)
+	if !ok {
+		t.Fatal("second accepted provider resolution unexpectedly unresolved")
+	}
+
+	want := "ANALYZE:E-PROVIDER-ANALYZE,CMP:E-PROVIDER-CMP-A,RLT:E-PROVIDER-RLT"
+
+	if first != want {
+		t.Fatalf(
+			"providers = %q want %q",
+			first,
+			want,
+		)
+	}
+
+	if second != first {
+		t.Fatalf(
+			"provider resolution is not deterministic: %q != %q",
+			first,
+			second,
+		)
+	}
+}
+
+func TestAcceptedCapabilityProvidersIgnoreNonAcceptedState(t *testing.T) {
+	st := core.EmptyState()
+
+	st.Accepted["E-PROVIDER-ANALYZE"] = core.EmergION{
+		IDN: "E-PROVIDER-ANALYZE",
+		STA: core.StateAccepted,
+		CAP: []string{"ANALYZE"},
+	}
+
+	st.Accepted["E-PROVIDER-CMP"] = core.EmergION{
+		IDN: "E-PROVIDER-CMP",
+		STA: core.StateAccepted,
+		CAP: []string{"CMP"},
+	}
+
+	st.AtGOV["E-NOT-ACCEPTED-RLT"] = core.EmergION{
+		IDN: "E-NOT-ACCEPTED-RLT",
+		STA: core.StateAtGOV,
+		CAP: []string{"RLT"},
+	}
+
+	if providers, ok := acceptedCapabilityProviders(
+		"DERIVE_CAPABILITY",
+		st,
+	); ok {
+		t.Fatalf(
+			"non-accepted capability became provider identity: %q",
+			providers,
+		)
+	}
+}
+
+func TestResolveRequiredCapabilityAddsOnlyCompleteAcceptedProviderProposal(t *testing.T) {
+	st := core.EmptyState()
+
+	st.Accepted["E-ANALYZE"] = core.EmergION{
+		IDN: "E-ANALYZE",
+		STA: core.StateAccepted,
+		CAP: []string{"ANALYZE"},
+	}
+
+	st.Accepted["E-CMP"] = core.EmergION{
+		IDN: "E-CMP",
+		STA: core.StateAccepted,
+		CAP: []string{"CMP"},
+	}
+
+	st.Accepted["E-RLT"] = core.EmergION{
+		IDN: "E-RLT",
+		STA: core.StateAccepted,
+		CAP: []string{"RLT"},
+	}
+
+	em := core.EmergION{
+		REL: map[string]string{
+			"required_capability": "DERIVE_CAPABILITY",
+		},
+	}
+
+	r := Runtime{}
+	r.resolveRequiredCapability(&em, st)
+
+	if em.REL["capability_resolution"] != "COMPOSABLE_CANDIDATE" {
+		t.Fatalf(
+			"resolution = %q want COMPOSABLE_CANDIDATE",
+			em.REL["capability_resolution"],
+		)
+	}
+
+	if em.REL["capability_composition"] != "ANALYZE+CMP+RLT" {
+		t.Fatalf(
+			"composition = %q",
+			em.REL["capability_composition"],
+		)
+	}
+
+	wantProviders := "ANALYZE:E-ANALYZE,CMP:E-CMP,RLT:E-RLT"
+
+	if em.REL["capability_providers"] != wantProviders {
+		t.Fatalf(
+			"providers = %q want %q",
+			em.REL["capability_providers"],
+			wantProviders,
+		)
+	}
+
+	if _, exists := em.REL["COMPOSITION_KIN"]; exists {
+		t.Fatal("provider resolution created unauthorized COMPOSITION_KIN")
+	}
+}
+
+func TestResolveRequiredCapabilityDoesNotFabricateMissingProviderIdentity(t *testing.T) {
+	st := core.EmptyState()
+
+	st.Accepted["E-ANALYZE"] = core.EmergION{
+		IDN: "E-ANALYZE",
+		STA: core.StateAccepted,
+		CAP: []string{"ANALYZE"},
+	}
+
+	st.Accepted["E-CMP"] = core.EmergION{
+		IDN: "E-CMP",
+		STA: core.StateAccepted,
+		CAP: []string{"CMP"},
+	}
+
+	em := core.EmergION{
+		REL: map[string]string{
+			"required_capability": "DERIVE_CAPABILITY",
+		},
+		CAP: []string{"RLT"},
+	}
+
+	r := Runtime{}
+	r.resolveRequiredCapability(&em, st)
+
+	if em.REL["capability_resolution"] != "COMPOSABLE_CANDIDATE" {
+		t.Fatalf(
+			"existing composition behavior changed: %q",
+			em.REL["capability_resolution"],
+		)
+	}
+
+	if got := em.REL["capability_providers"]; got != "" {
+		t.Fatalf(
+			"missing REG provider identity was fabricated: %q",
+			got,
+		)
+	}
+}

@@ -186,6 +186,50 @@ func requiredCapabilityRecipe(required string) []string {
 	}
 }
 
+func acceptedCapabilityProviders(
+	required string,
+	st core.State,
+) (string, bool) {
+	recipe := requiredCapabilityRecipe(required)
+	if len(recipe) == 0 {
+		return "", false
+	}
+
+	providers := make([]string, 0, len(recipe))
+
+	for _, requiredPart := range recipe {
+		var matches []string
+
+		for id, em := range st.Accepted {
+			if em.STA != core.StateAccepted {
+				continue
+			}
+
+			for _, capability := range em.CAP {
+				if strings.ToUpper(strings.TrimSpace(capability)) != requiredPart {
+					continue
+				}
+
+				matches = append(matches, id)
+				break
+			}
+		}
+
+		if len(matches) == 0 {
+			return "", false
+		}
+
+		sort.Strings(matches)
+
+		providers = append(
+			providers,
+			requiredPart+":"+matches[0],
+		)
+	}
+
+	return strings.Join(providers, ","), true
+}
+
 func (r Runtime) resolveRequiredCapability(
 	em *core.EmergION,
 	st core.State,
@@ -201,6 +245,7 @@ func (r Runtime) resolveRequiredCapability(
 
 	em.REL["capability_resolution"] = "UNRESOLVED"
 	delete(em.REL, "capability_composition")
+	delete(em.REL, "capability_providers")
 
 	available := map[string]bool{}
 
@@ -250,6 +295,10 @@ func (r Runtime) resolveRequiredCapability(
 
 	em.REL["capability_resolution"] = "COMPOSABLE_CANDIDATE"
 	em.REL["capability_composition"] = strings.Join(recipe, "+")
+
+	if providers, ok := acceptedCapabilityProviders(required, st); ok {
+		em.REL["capability_providers"] = providers
+	}
 }
 
 func expectedProtectorEnvelope(capabilities []string) (string, string) {
