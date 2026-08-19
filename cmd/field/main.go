@@ -23,6 +23,7 @@ import (
 	"emergion-sovereign-runtime/internal/reg"
 	fieldruntime "emergion-sovereign-runtime/internal/runtime"
 	"emergion-sovereign-runtime/internal/store"
+	"emergion-sovereign-runtime/pkg/fieldapi"
 )
 
 func fail(err error) { fmt.Fprintln(os.Stderr, "error:", err); os.Exit(1) }
@@ -175,6 +176,11 @@ func main() {
 
 		rt := fieldruntime.Runtime{Store: s, Reasoner: mkReasoner()}
 
+		sawRuntime, err := fieldapi.Open(*state, mkReasoner())
+		if err != nil {
+			fail(err)
+		}
+
 		fmt.Println(
 			"LIVING_FIELD",
 			filepath.Clean(*dropzone),
@@ -190,6 +196,16 @@ func main() {
 				fmt.Println(id, "AT_GOV")
 			},
 			func(cycleCtx context.Context) error {
+				circulated, err := sawRuntime.CirculateSAWs(cycleCtx)
+				if err != nil {
+					return err
+				}
+
+				for _, em := range circulated {
+					renderField(s, *output)
+					fmt.Println(em.IDN, "SAW_AT_GOV")
+				}
+
 				safeSignal, safeExecuted, err :=
 					rt.ExecuteOneSafeAction(cycleCtx, gemma)
 				if err != nil {
