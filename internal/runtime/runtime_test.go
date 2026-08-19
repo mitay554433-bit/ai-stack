@@ -3224,3 +3224,223 @@ func TestRecaptureCarriesGovernedProviderEdgeProposalWithoutCompositionKin(t *te
 		t.Fatal("stored proposal bypassed governed COMPOSITION_KIN")
 	}
 }
+
+func TestReturnedProviderEdgeProposalCanReenterAsGovernedComposition(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target := core.EmergION{
+		IDN: "E-GOVERNED-COMPOSITION-TARGET",
+		STA: core.StateAtGOV,
+		MEM: core.Memory{
+			SourceHash: "governed-composition-target-source",
+			Bytes:      1,
+			Stored:     1,
+			Summary:    "governed composition target",
+		},
+		REL: map[string]string{
+			"source_name": "governed-composition-target.txt",
+		},
+		CAP: []string{"OBS"},
+		VAL: core.Validation{
+			Facts:  []string{"source_preserved"},
+			Recoil: true,
+			WVC:    true,
+		},
+		EVO: core.Evolution{
+			Version: 1,
+		},
+	}
+
+	if _, err := s.SaveCandidate(target); err != nil {
+		t.Fatal(err)
+	}
+
+	approvedTarget, targetDecision, err := gov.Decide(
+		target,
+		gov.Approve,
+		"HUMAN_FINAL",
+		"approve exact governed composition target",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	targetDecisionID, err := s.SaveDecision(targetDecision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, targetReceipt, err := reg.Accept(
+		approvedTarget,
+		targetDecisionID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.SaveAccepted(targetReceipt); err != nil {
+		t.Fatal(err)
+	}
+
+	proposal := core.EmergION{
+		IDN: "E-RETURNED-PROVIDER-EDGE-PROPOSAL",
+		STA: core.StateAtGOV,
+		MEM: core.Memory{
+			SourceHash: "returned-provider-edge-proposal-source",
+			Bytes:      1,
+			Stored:     1,
+			Summary:    "provider edge proposal awaiting governed composition",
+		},
+		REL: map[string]string{
+			"source_name":                       "provider-edge-proposal.txt",
+			"capability_provider_edge_proposal": "E-PROVIDER-ANALYZE->E-PROVIDER-CMP,E-PROVIDER-CMP->E-PROVIDER-RLT",
+		},
+		CAP: []string{"OBS"},
+		VAL: core.Validation{
+			Facts:  []string{"source_preserved"},
+			Recoil: true,
+			WVC:    true,
+		},
+		EVO: core.Evolution{
+			Version: 1,
+		},
+	}
+
+	if _, err := s.SaveCandidate(proposal); err != nil {
+		t.Fatal(err)
+	}
+
+	returned, returnDecision, err := gov.Decide(
+		proposal,
+		gov.Return,
+		"HUMAN_FINAL",
+		"return provider-edge proposal for exact governed composition",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if returned.STA != core.StateReturned {
+		t.Fatalf("returned state = %q want %q", returned.STA, core.StateReturned)
+	}
+
+	if _, err := s.SaveDecision(returnDecision); err != nil {
+		t.Fatal(err)
+	}
+
+	beforeState, err := livefield.Rebuild(mustEvents(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	beforeReturned, ok := beforeState.Returned[proposal.IDN]
+	if !ok {
+		t.Fatal("provider-edge proposal did not enter HUMAN_FINAL RETURNED state")
+	}
+
+	source := filepath.Join(root, "governed-composition-rework.txt")
+	if err := os.WriteFile(
+		source,
+		[]byte("governed rework of returned provider-edge proposal"),
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	rt := Runtime{
+		Store:               s,
+		ReturnedPredecessor: proposal.IDN,
+		Reasoner: lineageReasoner{
+			result: reason.Result{
+				Summary: "governed composition rework",
+				Relationships: map[string]string{
+					"source_name":     "governed-composition-rework.txt",
+					"COMPOSITION_KIN": target.IDN,
+				},
+				Capabilities: []string{"OBS"},
+				Facts:        []string{"source_preserved"},
+				Risk:         "L",
+			},
+		},
+	}
+
+	em, duplicate, err := rt.Capture(
+		context.Background(),
+		source,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if duplicate {
+		t.Fatal("governed composition rework unexpectedly treated as duplicate")
+	}
+
+	if em.EVO.Supersedes != proposal.IDN {
+		t.Fatalf(
+			"rework supersedes = %q want %q",
+			em.EVO.Supersedes,
+			proposal.IDN,
+		)
+	}
+
+	if em.REL["COMPOSITION_KIN"] != target.IDN {
+		t.Fatalf(
+			"COMPOSITION_KIN = %q want %q",
+			em.REL["COMPOSITION_KIN"],
+			target.IDN,
+		)
+	}
+
+	if em.IDN == target.IDN {
+		t.Fatal("governed composition rework self-referenced target")
+	}
+
+	if em.STA != core.StateAtGOV {
+		t.Fatalf(
+			"reworked candidate state = %q want %q",
+			em.STA,
+			core.StateAtGOV,
+		)
+	}
+
+	if !em.VAL.Recoil || !em.VAL.WVC {
+		t.Fatal("governed composition rework did not pass RECOIL/WVC")
+	}
+
+	afterState, err := livefield.Rebuild(mustEvents(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	afterReturned, ok := afterState.Returned[proposal.IDN]
+	if !ok {
+		t.Fatal("returned predecessor disappeared after governed rework")
+	}
+
+	if afterReturned.IDN != beforeReturned.IDN ||
+		afterReturned.MEM.SourceHash != beforeReturned.MEM.SourceHash ||
+		afterReturned.REL["capability_provider_edge_proposal"] !=
+			beforeReturned.REL["capability_provider_edge_proposal"] {
+		t.Fatal("returned predecessor was mutated by governed composition rework")
+	}
+
+	admitted, ok := afterState.AtGOV[em.IDN]
+	if !ok {
+		t.Fatal("governed composition rework did not return to G")
+	}
+
+	if admitted.REL["COMPOSITION_KIN"] != target.IDN {
+		t.Fatal("stored governed composition target changed")
+	}
+
+	if admitted.EVO.Supersedes != proposal.IDN {
+		t.Fatal("stored sovereign rework lineage changed")
+	}
+}
