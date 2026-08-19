@@ -278,15 +278,26 @@ func TestRejectPromptPlaceholdersAllowsRealSemanticResult(t *testing.T) {
 }
 
 func TestRejectPromptPlaceholdersRejectsSummaryFieldLabel(t *testing.T) {
-	result := Result{
-		Summary:      "F: The full test suite passes.",
-		Risk:         "M",
-		Facts:        []string{"The full test suite passes."},
-		Capabilities: []string{"verify runtime integrity"},
-	}
+	for _, summary := range []string{
+		"F: The full test suite passes.",
+		"F,C: The full test suite passes.",
+		"C,F: The full test suite passes.",
+		"S,F: The full test suite passes.",
+		"S,C: The full test suite passes.",
+	} {
+		result := Result{
+			Summary:      summary,
+			Risk:         "M",
+			Facts:        []string{"The full test suite passes."},
+			Capabilities: []string{"verify runtime integrity"},
+		}
 
-	if err := rejectPromptPlaceholders(result, "The full test suite passes and runtime integrity can be verified."); err == nil {
-		t.Fatal("summary field label was accepted")
+		if err := rejectPromptPlaceholders(
+			result,
+			"The full test suite passes and runtime integrity can be verified.",
+		); err == nil {
+			t.Fatalf("summary field label %q was accepted", summary)
+		}
 	}
 }
 
@@ -386,5 +397,60 @@ func TestRejectPromptPlaceholdersAllowsConcreteCapabilityForm(t *testing.T) {
 		"COSL event hashes and previous-hash chain verify.",
 	); err != nil {
 		t.Fatalf("concrete capability rejected: %v", err)
+	}
+}
+
+func TestMXPDGrammarOwnsKnownBadLeadingLexicalForms(t *testing.T) {
+	required := []string{
+		`text ::= safe-first text-tail | label-first label-next text-tail`,
+		`safe-first ::= [ABDIJOPQRVWXYZabdijopqrvwxyz0-9]`,
+		`label-first ::= [CEFGHKLMNSTUcefghklmnstu]`,
+		`label-next ::= [^:=|\r\n]`,
+		`text-tail ::= [^|\r\n]*`,
+	}
+
+	for _, want := range required {
+		if !strings.Contains(mxpdGrammar, want) {
+			t.Fatalf("MXPD grammar missing lexical constraint %q", want)
+		}
+	}
+
+	if strings.Contains(mxpdGrammar, `text ::= [^|\r\n]+`) {
+		t.Fatal("MXPD grammar still permits unrestricted leading text characters")
+	}
+}
+
+func TestMXPDGrammarMakesCapabilityOptionalAndCanonical(t *testing.T) {
+	if !strings.Contains(
+		mxpdGrammar,
+		`root ::= summary risk fact capability? end`,
+	) {
+		t.Fatal("MXPD grammar still requires a capability")
+	}
+
+	if !strings.Contains(
+		mxpdGrammar,
+		`capability ::= "C|" capability-token "\n"`,
+	) {
+		t.Fatal("MXPD capability is not machine-token constrained")
+	}
+
+	for _, token := range []string{
+		"OBS",
+		"CMP",
+		"RLT",
+		"VLD",
+		"REASON",
+		"ANALYZE",
+		"DRAFT",
+		"SIMULATE",
+	} {
+		if !strings.Contains(mxpdGrammar, `"`+token+`"`) {
+			t.Fatalf("canonical capability %q missing from MXPD grammar", token)
+		}
+	}
+
+	if strings.Contains(mxpdGrammar, `capability ::= "C|can " text "\n"`) {
+		t.Fatal("free-form natural-language capability generation remains enabled")
 	}
 }

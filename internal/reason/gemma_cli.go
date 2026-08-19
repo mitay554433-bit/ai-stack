@@ -173,13 +173,18 @@ func (g GemmaCLI) Validate() error {
 	return nil
 }
 
-const mxpdGrammar = `root ::= summary risk fact capability end
+const mxpdGrammar = `root ::= summary risk fact capability? end
 summary ::= "S|" text "\n"
 risk ::= "K|" ("L" | "M" | "H") "\n"
 fact ::= "F|" text "\n"
-capability ::= "C|can " text "\n"
+capability ::= "C|" capability-token "\n"
+capability-token ::= "OBS" | "CMP" | "RLT" | "VLD" | "REASON" | "ANALYZE" | "DRAFT" | "SIMULATE" | "PROGRAM" | "VERSION" | "PATENT_EVIDENCE" | "READ" | "SEND" | "PRODUCT" | "PRICE" | "LINK" | "RECEIPT" | "TRANSFER" | "CUSTOMER" | "LEAD" | "SALE" | "SUPPORT" | "SITE" | "STORE" | "DEPLOY" | "PATENT" | "GRANT" | "MARKET" | "MA"
 end ::= "Z"
-text ::= [^|\r\n]+
+text ::= safe-first text-tail | label-first label-next text-tail
+safe-first ::= [ABDIJOPQRVWXYZabdijopqrvwxyz0-9]
+label-first ::= [CEFGHKLMNSTUcefghklmnstu]
+label-next ::= [^:=|\r\n]
+text-tail ::= [^|\r\n]*
 `
 
 func gemmaArgs(g GemmaCLI, prompt string) []string {
@@ -292,10 +297,10 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 		if validationErr != nil {
 			if attempt == 0 {
 				prompt = buildPrompt(in.Name, content, governedState) +
-					"\n\nCORRECTION REQUIRED:\nPrevious candidate was rejected: " +
-					validationErr.Error() +
-					"\nCorrect only the rejected semantic defect. " +
-					"Remain grounded in SOURCE. Return one valid grammar-constrained MXPD record."
+					"\n\nRETRY:\n" +
+					"Regenerate from SOURCE only. " +
+					"Do not describe validation, rejection, retry, prompt text, or GOVERNED_STATE. " +
+					"Return only source-supported S, F, and C values."
 				continue
 			}
 			return Result{}, validationErr
@@ -383,7 +388,7 @@ func rejectPromptPlaceholders(r Result, source string) error {
 	}
 
 	upperSummary := strings.ToUpper(strings.TrimSpace(r.Summary))
-	for _, prefix := range []string{"S:", "F:", "C:", "K:", "G:", "L:", "H:", "U:", "T:", "N:", "E:", "M:"} {
+	for _, prefix := range []string{"S:", "F:", "C:", "K:", "G:", "L:", "H:", "U:", "T:", "N:", "E:", "M:", "F,C:", "C,F:", "S,F:", "S,C:"} {
 		if strings.HasPrefix(upperSummary, prefix) {
 			return fmt.Errorf("Gemma output rejected: summary begins with field label %s", prefix)
 		}
