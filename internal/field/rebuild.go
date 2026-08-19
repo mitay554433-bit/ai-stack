@@ -102,6 +102,55 @@ func Rebuild(events []core.Event) (core.State, error) {
 			if err != nil {
 				return st, err
 			}
+			if em.EVO.Metadata != nil {
+				archonym := strings.TrimSpace(em.EVO.Metadata.Archonym)
+				if archonym != "" {
+					for acceptedID, accepted := range st.Accepted {
+						if accepted.EVO.Metadata == nil {
+							continue
+						}
+
+						acceptedArchonym := strings.TrimSpace(accepted.EVO.Metadata.Archonym)
+						if acceptedArchonym == "" || !strings.EqualFold(archonym, acceptedArchonym) {
+							continue
+						}
+
+						predecessor := strings.TrimSpace(em.EVO.Supersedes)
+						seen := map[string]bool{}
+						sameKin := false
+
+						for predecessor != "" {
+							if seen[predecessor] {
+								return st, fmt.Errorf("Kin lineage cycle at %s", predecessor)
+							}
+							seen[predecessor] = true
+
+							if predecessor == acceptedID {
+								sameKin = true
+								break
+							}
+
+							ancestor, ok := st.Accepted[predecessor]
+							if !ok {
+								return st, fmt.Errorf("Kin predecessor not REG-accepted: %s", predecessor)
+							}
+
+							predecessor = strings.TrimSpace(ancestor.EVO.Supersedes)
+						}
+
+						if sameKin {
+							continue
+						}
+
+						return st, fmt.Errorf(
+							"Archonym %q already belongs to REG-accepted sovereign EmergION %s",
+							archonym,
+							acceptedID,
+						)
+					}
+				}
+			}
+
 			delete(st.Approved, em.IDN)
 			delete(decisionEvents, em.IDN)
 			em.STA = core.StateAccepted

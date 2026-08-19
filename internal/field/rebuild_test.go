@@ -442,3 +442,289 @@ func TestAcceptedKinRootStopsAtGovernedReturnedPredecessor(t *testing.T) {
 		t.Fatalf("root = %q want E-SUCCESSOR", root)
 	}
 }
+
+func TestREGReplayRejectsArchonymCollisionAcrossSovereignEmergIONs(t *testing.T) {
+	first := core.EmergION{
+		IDN: "E-ARCHONYM-FIRST",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{
+			Version: 1,
+			Metadata: &core.Metadata{
+				Archonym: "VERITEX CORE",
+			},
+		},
+	}
+
+	second := core.EmergION{
+		IDN: "E-ARCHONYM-SECOND",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{
+			Version: 1,
+			Metadata: &core.Metadata{
+				Archonym: "VERITEX CORE",
+			},
+		},
+	}
+
+	events := []core.Event{
+		{
+			Type:     "C",
+			ID:       "EV-C-FIRST",
+			EmergION: &first,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-FIRST",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: first.IDN,
+				Decision:   "APPROVE",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "R",
+			ID:   "EV-R-FIRST",
+			REG: &core.REGReceipt{
+				EmergIONID: first.IDN,
+				DecisionID: "EV-D-FIRST",
+			},
+		},
+		{
+			Type:     "C",
+			ID:       "EV-C-SECOND",
+			EmergION: &second,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-SECOND",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: second.IDN,
+				Decision:   "APPROVE",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "R",
+			ID:   "EV-R-SECOND",
+			REG: &core.REGReceipt{
+				EmergIONID: second.IDN,
+				DecisionID: "EV-D-SECOND",
+			},
+		},
+	}
+
+	if _, err := Rebuild(events); err == nil {
+		t.Fatal("duplicate sovereign Archonym unexpectedly entered REG")
+	}
+}
+
+func TestREGReplayAllowsArchonymContinuationThroughDirectSupersedes(t *testing.T) {
+	first := core.EmergION{
+		IDN: "E-ARCHONYM-ROOT",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{
+			Version: 1,
+			Metadata: &core.Metadata{
+				Archonym: "VERITEX CORE",
+			},
+		},
+	}
+
+	successor := core.EmergION{
+		IDN: "E-ARCHONYM-SUCCESSOR",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{
+			Version:    2,
+			Supersedes: first.IDN,
+			Metadata: &core.Metadata{
+				Archonym: "VERITEX CORE",
+			},
+		},
+	}
+
+	events := []core.Event{
+		{
+			Type:     "C",
+			ID:       "EV-C-ROOT",
+			EmergION: &first,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-ROOT",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: first.IDN,
+				Decision:   "APPROVE",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "R",
+			ID:   "EV-R-ROOT",
+			REG: &core.REGReceipt{
+				EmergIONID: first.IDN,
+				DecisionID: "EV-D-ROOT",
+			},
+		},
+		{
+			Type:     "C",
+			ID:       "EV-C-SUCCESSOR",
+			EmergION: &successor,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-SUCCESSOR",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: successor.IDN,
+				Decision:   "APPROVE",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "R",
+			ID:   "EV-R-SUCCESSOR",
+			REG: &core.REGReceipt{
+				EmergIONID: successor.IDN,
+				DecisionID: "EV-D-SUCCESSOR",
+			},
+		},
+	}
+
+	st, err := Rebuild(events)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := st.Accepted[first.IDN]; !ok {
+		t.Fatal("Archonym predecessor disappeared from accepted state")
+	}
+	if _, ok := st.Accepted[successor.IDN]; !ok {
+		t.Fatal("governed Archonym successor did not enter accepted state")
+	}
+}
+
+func TestREGReplayAllowsArchonymContinuationAcrossAcceptedKinAncestry(t *testing.T) {
+	root := core.EmergION{
+		IDN: "E-ARCHONYM-KIN-A",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{
+			Version: 1,
+			Metadata: &core.Metadata{
+				Archonym: "VERITEX CORE",
+			},
+		},
+	}
+
+	middle := core.EmergION{
+		IDN: "E-ARCHONYM-KIN-B",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{
+			Version:    2,
+			Supersedes: root.IDN,
+			Metadata: &core.Metadata{
+				Archonym: "VERITEX CORE",
+			},
+		},
+	}
+
+	latest := core.EmergION{
+		IDN: "E-ARCHONYM-KIN-C",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{
+			Version:    3,
+			Supersedes: middle.IDN,
+			Metadata: &core.Metadata{
+				Archonym: "VERITEX CORE",
+			},
+		},
+	}
+
+	events := []core.Event{
+		{
+			Type:     "C",
+			ID:       "EV-C-KIN-A",
+			EmergION: &root,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-KIN-A",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: root.IDN,
+				Decision:   "APPROVE",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "R",
+			ID:   "EV-R-KIN-A",
+			REG: &core.REGReceipt{
+				EmergIONID: root.IDN,
+				DecisionID: "EV-D-KIN-A",
+			},
+		},
+		{
+			Type:     "C",
+			ID:       "EV-C-KIN-B",
+			EmergION: &middle,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-KIN-B",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: middle.IDN,
+				Decision:   "APPROVE",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "R",
+			ID:   "EV-R-KIN-B",
+			REG: &core.REGReceipt{
+				EmergIONID: middle.IDN,
+				DecisionID: "EV-D-KIN-B",
+			},
+		},
+		{
+			Type:     "C",
+			ID:       "EV-C-KIN-C",
+			EmergION: &latest,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-KIN-C",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: latest.IDN,
+				Decision:   "APPROVE",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "R",
+			ID:   "EV-R-KIN-C",
+			REG: &core.REGReceipt{
+				EmergIONID: latest.IDN,
+				DecisionID: "EV-D-KIN-C",
+			},
+		},
+	}
+
+	st, err := Rebuild(events)
+	if err != nil {
+		t.Fatalf(
+			"three-generation governed Archonym Kin continuation rejected: %v",
+			err,
+		)
+	}
+
+	for _, id := range []string{
+		root.IDN,
+		middle.IDN,
+		latest.IDN,
+	} {
+		if _, ok := st.Accepted[id]; !ok {
+			t.Fatalf(
+				"Archonym Kin member %s missing from accepted state",
+				id,
+			)
+		}
+	}
+}
