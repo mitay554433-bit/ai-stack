@@ -92,11 +92,11 @@ func TestSpatialConvergenceZoneDerivesAcceptedKinWithoutMerging(t *testing.T) {
 		byID[row.ID] = row
 	}
 
-	if byID[predecessor.IDN].Kin != "root → E-PREDECESSOR; descendant → E-SUCCESSOR" {
+	if byID[predecessor.IDN].Kin != "root → E-PREDECESSOR" {
 		t.Fatalf("predecessor Kin = %q", byID[predecessor.IDN].Kin)
 	}
 
-	if byID[successor.IDN].Kin != "root → E-PREDECESSOR; predecessor → E-PREDECESSOR" {
+	if byID[successor.IDN].Kin != "root → E-PREDECESSOR" {
 		t.Fatalf("successor Kin = %q", byID[successor.IDN].Kin)
 	}
 

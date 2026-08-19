@@ -133,21 +133,6 @@ func crystallizePRMs(st core.State) ([]prm, error) {
 func convergenceRows(st core.State) ([]convergenceRow, error) {
 	out := make([]convergenceRow, 0, len(st.Accepted))
 
-	children := map[string][]string{}
-	for _, e := range st.Accepted {
-		predecessor := strings.TrimSpace(e.EVO.Supersedes)
-		if predecessor == "" {
-			continue
-		}
-		if _, accepted := st.Accepted[predecessor]; !accepted {
-			continue
-		}
-		children[predecessor] = append(children[predecessor], e.IDN)
-	}
-	for predecessor := range children {
-		sort.Strings(children[predecessor])
-	}
-
 	for _, e := range st.Accepted {
 		row := convergenceRow{
 			ID:           e.IDN,
@@ -161,15 +146,6 @@ func convergenceRows(st core.State) ([]convergenceRow, error) {
 			return nil, err
 		}
 		kin = append(kin, "root → "+root)
-		predecessor := strings.TrimSpace(e.EVO.Supersedes)
-		if predecessor != "" {
-			if _, accepted := st.Accepted[predecessor]; accepted {
-				kin = append(kin, "predecessor → "+predecessor)
-			}
-		}
-		for _, descendant := range children[e.IDN] {
-			kin = append(kin, "descendant → "+descendant)
-		}
 		row.Kin = strings.Join(kin, "; ")
 
 		if e.EVO.Metadata != nil {
