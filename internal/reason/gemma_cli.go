@@ -183,7 +183,7 @@ end ::= "Z"
 text ::= safe-first text-tail | label-first label-next text-tail
 safe-first ::= [ABDIJOPQRVWXYZabdijopqrvwxyz0-9]
 label-first ::= [CEFGHKLMNSTUcefghklmnstu]
-label-next ::= [^:=|\r\n]
+label-next ::= [^:=,|\r\n]
 text-tail ::= [^|\r\n]*
 `
 
@@ -392,6 +392,7 @@ func rejectPromptPlaceholders(r Result, source string) error {
 		if strings.HasPrefix(upperSummary, prefix) {
 			return fmt.Errorf("Gemma output rejected: summary begins with field label %s", prefix)
 		}
+
 	}
 
 	for _, capability := range r.Capabilities {
@@ -405,6 +406,20 @@ func rejectPromptPlaceholders(r Result, source string) error {
 
 	if strings.HasPrefix(strings.TrimSpace(r.Summary), ":") {
 		return fmt.Errorf("Gemma output rejected: summary begins with punctuation")
+	}
+
+	if fields := strings.Fields(upperSummary); len(fields) > 0 {
+		onlyFieldTokens := true
+		for _, field := range fields {
+			switch field {
+			case "S", "F", "C", "K", "G", "L", "H", "U", "T", "N", "E", "M":
+			default:
+				onlyFieldTokens = false
+			}
+		}
+		if onlyFieldTokens {
+			return fmt.Errorf("Gemma output rejected: summary contains only field tokens")
+		}
 	}
 
 	for _, fact := range r.Facts {

@@ -283,6 +283,12 @@ func TestRejectPromptPlaceholdersRejectsSummaryFieldLabel(t *testing.T) {
 		"F,C: The full test suite passes.",
 		"C,F: The full test suite passes.",
 		"S,F: The full test suite passes.",
+		"F C",
+		"C F",
+		"S F",
+		"S C",
+		"F C S",
+
 		"S,C: The full test suite passes.",
 	} {
 		result := Result{
@@ -405,7 +411,7 @@ func TestMXPDGrammarOwnsKnownBadLeadingLexicalForms(t *testing.T) {
 		`text ::= safe-first text-tail | label-first label-next text-tail`,
 		`safe-first ::= [ABDIJOPQRVWXYZabdijopqrvwxyz0-9]`,
 		`label-first ::= [CEFGHKLMNSTUcefghklmnstu]`,
-		`label-next ::= [^:=|\r\n]`,
+		`label-next ::= [^:=,|\r\n]`,
 		`text-tail ::= [^|\r\n]*`,
 	}
 
