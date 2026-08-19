@@ -3444,3 +3444,401 @@ func TestReturnedProviderEdgeProposalCanReenterAsGovernedComposition(t *testing.
 		t.Fatal("stored sovereign rework lineage changed")
 	}
 }
+
+func TestGovernedProviderCompositionCirculatesThroughSAWExecutionRecapture(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target := core.EmergION{
+		IDN: "E-CIRCULATION-COMPOSITION-TARGET",
+		STA: core.StateAtGOV,
+		MEM: core.Memory{
+			SourceHash: "circulation-composition-target-source",
+			Bytes:      1,
+			Stored:     1,
+			Summary:    "governed circulation composition target",
+		},
+		REL: map[string]string{
+			"source_name": "circulation-composition-target.txt",
+		},
+		CAP: []string{"OBS"},
+		VAL: core.Validation{
+			Facts:  []string{"source_preserved"},
+			Recoil: true,
+			WVC:    true,
+		},
+		EVO: core.Evolution{
+			Version: 1,
+		},
+	}
+
+	if _, err := s.SaveCandidate(target); err != nil {
+		t.Fatal(err)
+	}
+
+	approvedTarget, targetDecision, err := gov.Decide(
+		target,
+		gov.Approve,
+		"HUMAN_FINAL",
+		"approve governed circulation composition target",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	targetDecisionID, err := s.SaveDecision(targetDecision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, targetReceipt, err := reg.Accept(
+		approvedTarget,
+		targetDecisionID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.SaveAccepted(targetReceipt); err != nil {
+		t.Fatal(err)
+	}
+
+	proposal := core.EmergION{
+		IDN: "E-CIRCULATION-PROVIDER-EDGE-PROPOSAL",
+		STA: core.StateAtGOV,
+		MEM: core.Memory{
+			SourceHash: "circulation-provider-edge-proposal-source",
+			Bytes:      1,
+			Stored:     1,
+			Summary:    "provider edge proposal awaiting governed circulation composition",
+		},
+		REL: map[string]string{
+			"source_name":                       "circulation-provider-edge-proposal.txt",
+			"capability_provider_edge_proposal": "E-PROVIDER-ANALYZE->E-PROVIDER-CMP,E-PROVIDER-CMP->E-PROVIDER-RLT",
+		},
+		CAP: []string{"OBS"},
+		VAL: core.Validation{
+			Facts:  []string{"source_preserved"},
+			Recoil: true,
+			WVC:    true,
+		},
+		EVO: core.Evolution{
+			Version: 1,
+		},
+	}
+
+	if _, err := s.SaveCandidate(proposal); err != nil {
+		t.Fatal(err)
+	}
+
+	returned, returnDecision, err := gov.Decide(
+		proposal,
+		gov.Return,
+		"HUMAN_FINAL",
+		"return provider edge proposal for governed circulation composition",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if returned.STA != core.StateReturned {
+		t.Fatalf(
+			"returned proposal state = %q want %q",
+			returned.STA,
+			core.StateReturned,
+		)
+	}
+
+	if _, err := s.SaveDecision(returnDecision); err != nil {
+		t.Fatal(err)
+	}
+
+	reworkSource := filepath.Join(
+		root,
+		"governed-provider-composition-rework.txt",
+	)
+
+	if err := os.WriteFile(
+		reworkSource,
+		[]byte("governed provider composition circulation rework"),
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	compositionRuntime := Runtime{
+		Store:               s,
+		ReturnedPredecessor: proposal.IDN,
+		Reasoner: lineageReasoner{
+			result: reason.Result{
+				Summary: "governed provider composition circulation",
+				Relationships: map[string]string{
+					"source_name":     "governed-provider-composition-rework.txt",
+					"COMPOSITION_KIN": target.IDN,
+				},
+				Capabilities: []string{"OBS"},
+				Facts:        []string{"source_preserved"},
+				Risk:         "L",
+			},
+		},
+	}
+
+	composed, duplicate, err := compositionRuntime.Capture(
+		context.Background(),
+		reworkSource,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if duplicate {
+		t.Fatal("governed composition rework unexpectedly duplicate")
+	}
+
+	if composed.EVO.Supersedes != proposal.IDN {
+		t.Fatalf(
+			"composition supersedes = %q want %q",
+			composed.EVO.Supersedes,
+			proposal.IDN,
+		)
+	}
+
+	if composed.REL["COMPOSITION_KIN"] != target.IDN {
+		t.Fatalf(
+			"composition target = %q want %q",
+			composed.REL["COMPOSITION_KIN"],
+			target.IDN,
+		)
+	}
+
+	if composed.STA != core.StateAtGOV {
+		t.Fatalf(
+			"composition state = %q want %q",
+			composed.STA,
+			core.StateAtGOV,
+		)
+	}
+
+	if !composed.VAL.Recoil || !composed.VAL.WVC {
+		t.Fatal("governed composition did not pass RECOIL/WVC")
+	}
+
+	approvedComposition, compositionDecision, err := gov.Decide(
+		composed,
+		gov.Approve,
+		"HUMAN_FINAL",
+		"approve governed provider composition circulation",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	compositionDecisionID, err := s.SaveDecision(compositionDecision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	acceptedComposition, compositionReceipt, err := reg.Accept(
+		approvedComposition,
+		compositionDecisionID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.SaveAccepted(compositionReceipt); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := livefield.Rebuild(mustEvents(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := st.Accepted[acceptedComposition.IDN]; !ok {
+		t.Fatal("governed composition did not reach REG")
+	}
+
+	sources, err := proj.SAWSources(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(sources) != 1 {
+		t.Fatalf(
+			"SAW source count = %d want 1",
+			len(sources),
+		)
+	}
+
+	sawSourcePath := filepath.Join(
+		root,
+		"governed-provider-composition.saw.mxpd",
+	)
+
+	if err := os.WriteFile(
+		sawSourcePath,
+		sources[0].Content,
+		0600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	executionRuntime := Runtime{
+		Store: s,
+		Reasoner: lineageReasoner{
+			result: reason.Result{
+				Summary: "governed provider composition SAW source",
+				Relationships: map[string]string{
+					"source_name": "governed-provider-composition.saw.mxpd",
+				},
+				Capabilities: []string{"ANALYZE"},
+				Facts:        []string{"saw_source_preserved"},
+				Risk:         "L",
+				Facets: []string{
+					"ANALYTICS_FORECAST",
+				},
+			},
+		},
+	}
+
+	sawEmergION, duplicate, err := executionRuntime.Capture(
+		context.Background(),
+		sawSourcePath,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if duplicate {
+		t.Fatal("governed composition SAW source unexpectedly duplicate")
+	}
+
+	if sawEmergION.STA != core.StateAtGOV {
+		t.Fatalf(
+			"SAW EmergION state = %q want %q",
+			sawEmergION.STA,
+			core.StateAtGOV,
+		)
+	}
+
+	approvedSAW, sawDecision, err := gov.Decide(
+		sawEmergION,
+		gov.Approve,
+		"HUMAN_FINAL",
+		"approve governed composition SAW source for execution",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sawDecisionID, err := s.SaveDecision(sawDecision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	acceptedSAW, sawReceipt, err := reg.Accept(
+		approvedSAW,
+		sawDecisionID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.SaveAccepted(sawReceipt); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err = livefield.Rebuild(mustEvents(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := st.Accepted[acceptedSAW.IDN]; !ok {
+		t.Fatal("governed composition SAW source did not reach REG")
+	}
+
+	request, err := adapters.PrepareExecution(
+		st,
+		acceptedSAW.IDN,
+		"LOCAL_GEMMA",
+		"ANALYZE",
+		true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result := adapters.BindExecutionResult(
+		request,
+		adapters.ExecutionResult{
+			Succeeded: true,
+			Output:    "governed provider composition circulation proof",
+		},
+	)
+
+	if err := adapters.VerifyExecutionResult(request, result); err != nil {
+		t.Fatal(err)
+	}
+
+	signal, duplicate, err := executionRuntime.CaptureGovernedExecutionResult(
+		context.Background(),
+		request,
+		result,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if duplicate {
+		t.Fatal("governed composition execution result unexpectedly duplicate")
+	}
+
+	if signal.STA != core.StateAtGOV {
+		t.Fatalf(
+			"execution RECAPTURE state = %q want %q",
+			signal.STA,
+			core.StateAtGOV,
+		)
+	}
+
+	if !signal.VAL.Recoil || !signal.VAL.WVC {
+		t.Fatal("execution RECAPTURE did not pass RECOIL/WVC")
+	}
+
+	if signal.REL["parent_emergion"] != acceptedSAW.IDN {
+		t.Fatalf(
+			"execution parent = %q want %q",
+			signal.REL["parent_emergion"],
+			acceptedSAW.IDN,
+		)
+	}
+
+	finalState, err := livefield.Rebuild(mustEvents(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	admittedSignal, ok := finalState.AtGOV[signal.IDN]
+	if !ok {
+		t.Fatal("execution RECAPTURE did not return to G")
+	}
+
+	if admittedSignal.REL["parent_emergion"] != acceptedSAW.IDN {
+		t.Fatal("stored execution lineage changed")
+	}
+
+	if _, ok := finalState.Accepted[acceptedComposition.IDN]; !ok {
+		t.Fatal("governed composition disappeared during circulation")
+	}
+
+	if _, ok := finalState.Accepted[acceptedSAW.IDN]; !ok {
+		t.Fatal("accepted SAW EmergION disappeared during circulation")
+	}
+}
