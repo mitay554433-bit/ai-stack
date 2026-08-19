@@ -230,6 +230,48 @@ func acceptedCapabilityProviders(
 	return strings.Join(providers, ","), true
 }
 
+type capabilityProviderEdge struct {
+	From string
+	To   string
+}
+
+func capabilityProviderEdges(providers string) ([]capabilityProviderEdge, error) {
+	parts := strings.Split(strings.TrimSpace(providers), ",")
+	if len(parts) < 2 {
+		return nil, nil
+	}
+
+	ids := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		_, id, ok := strings.Cut(part, ":")
+		if !ok {
+			return nil, fmt.Errorf("invalid capability provider %q", part)
+		}
+
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return nil, fmt.Errorf("empty capability provider identity in %q", part)
+		}
+
+		ids = append(ids, id)
+	}
+
+	edges := make([]capabilityProviderEdge, 0, len(ids)-1)
+	for i := 0; i+1 < len(ids); i++ {
+		if ids[i] == ids[i+1] {
+			return nil, fmt.Errorf("capability provider edge cannot self-reference %s", ids[i])
+		}
+
+		edges = append(edges, capabilityProviderEdge{
+			From: ids[i],
+			To:   ids[i+1],
+		})
+	}
+
+	return edges, nil
+}
+
 func (r Runtime) resolveRequiredCapability(
 	em *core.EmergION,
 	st core.State,

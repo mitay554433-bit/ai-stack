@@ -3011,3 +3011,78 @@ func TestResolveRequiredCapabilityDoesNotFabricateMissingProviderIdentity(t *tes
 		)
 	}
 }
+
+func TestCapabilityProviderEdgesDeriveAdjacentComposition(t *testing.T) {
+	got, err := capabilityProviderEdges(
+		"ANALYZE:E-A,CMP:E-B,RLT:E-C",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("edges = %d want 2", len(got))
+	}
+
+	if got[0].From != "E-A" || got[0].To != "E-B" {
+		t.Fatalf("first edge = %#v", got[0])
+	}
+
+	if got[1].From != "E-B" || got[1].To != "E-C" {
+		t.Fatalf("second edge = %#v", got[1])
+	}
+}
+
+func TestCapabilityProviderEdgesRejectMalformedProvider(t *testing.T) {
+	_, err := capabilityProviderEdges(
+		"ANALYZE:E-A,BROKEN,RLT:E-C",
+	)
+
+	if err == nil {
+		t.Fatal("malformed capability provider unexpectedly accepted")
+	}
+}
+
+func TestCapabilityProviderEdgesRejectEmptyProviderIdentity(t *testing.T) {
+	_, err := capabilityProviderEdges(
+		"ANALYZE:E-A,CMP:,RLT:E-C",
+	)
+
+	if err == nil {
+		t.Fatal("empty capability provider identity unexpectedly accepted")
+	}
+}
+
+func TestCapabilityProviderEdgesRejectSelfReference(t *testing.T) {
+	_, err := capabilityProviderEdges(
+		"ANALYZE:E-A,CMP:E-A",
+	)
+
+	if err == nil {
+		t.Fatal("self-referencing provider edge unexpectedly accepted")
+	}
+}
+
+func TestCapabilityProviderEdgesSingleProviderProducesNoEdge(t *testing.T) {
+	got, err := capabilityProviderEdges(
+		"ANALYZE:E-A",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != 0 {
+		t.Fatalf("single provider produced edges: %#v", got)
+	}
+}
+
+func TestCapabilityProviderEdgesEmptyProducesNoEdge(t *testing.T) {
+	got, err := capabilityProviderEdges("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != 0 {
+		t.Fatalf("empty providers produced edges: %#v", got)
+	}
+}
