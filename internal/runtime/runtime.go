@@ -747,6 +747,7 @@ func (r Runtime) validateLineage(analysis *reason.Result) error {
 			"successor",
 			"kin",
 			"lineage",
+			"capability_provider_edge_proposal",
 			"source_hash",
 			"provenance",
 		} {
@@ -849,6 +850,24 @@ func (r Runtime) recapture(
 	}
 
 	r.resolveRequiredCapability(&em, capabilityState)
+
+	delete(em.REL, "capability_provider_edge_proposal")
+
+	if providers := strings.TrimSpace(em.REL["capability_providers"]); providers != "" {
+		edges, edgeErr := capabilityProviderEdges(providers)
+		if edgeErr != nil {
+			_, _ = r.Store.PruneOrphans()
+			return em, false, edgeErr
+		}
+
+		proposal := make([]string, 0, len(edges))
+		for _, edge := range edges {
+			proposal = append(proposal, edge.From+"->"+edge.To)
+		}
+		if len(proposal) > 0 {
+			em.REL["capability_provider_edge_proposal"] = strings.Join(proposal, ",")
+		}
+	}
 
 	if em.EVO.Metadata == nil {
 		em.EVO.Metadata = &core.Metadata{

@@ -3086,3 +3086,141 @@ func TestCapabilityProviderEdgesEmptyProducesNoEdge(t *testing.T) {
 		t.Fatalf("empty providers produced edges: %#v", got)
 	}
 }
+
+func TestRecaptureCarriesGovernedProviderEdgeProposalWithoutCompositionKin(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	acceptProvider := func(id, capability string) {
+		t.Helper()
+
+		candidate := core.EmergION{
+			IDN: id,
+			STA: core.StateAtGOV,
+			MEM: core.Memory{
+				SourceHash: "source-" + strings.ToLower(capability),
+				Bytes:      1,
+				Stored:     1,
+			},
+			CAP: []string{capability},
+			VAL: core.Validation{
+				Recoil: true,
+				WVC:    true,
+			},
+			EVO: core.Evolution{
+				Version: 1,
+			},
+		}
+
+		if _, err := s.SaveCandidate(candidate); err != nil {
+			t.Fatal(err)
+		}
+
+		approved, decision, err := gov.Decide(
+			candidate,
+			gov.Approve,
+			"HUMAN_FINAL",
+			"provider-edge composition proof",
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		decisionID, err := s.SaveDecision(decision)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, receipt, err := reg.Accept(approved, decisionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := s.SaveAccepted(receipt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	acceptProvider("E-PROVIDER-ANALYZE", "ANALYZE")
+	acceptProvider("E-PROVIDER-CMP", "CMP")
+	acceptProvider("E-PROVIDER-RLT", "RLT")
+
+	r := Runtime{
+		Store:    s,
+		Reasoner: reason.Heuristic{},
+	}
+
+	_, cause := pivot.Observe(
+		"COVERAGE",
+		"CANDIDATE_COVERAGE_CLAIM",
+		"BRIDGEGAP_OBSERVATION",
+		"NO_UNRESOLVED_BRIDGEGAP",
+		func() error {
+			return errors.New(
+				"COVERAGE failed: BRIDGEGAP:capabilities",
+			)
+		},
+	)
+	if cause == nil {
+		t.Fatal("expected COVERAGE divergence")
+	}
+
+	em, duplicate, err := r.recapture(
+		context.Background(),
+		"",
+		nil,
+		cause,
+	)
+	if duplicate {
+		t.Fatal("RECAPTURE unexpectedly reported duplicate")
+	}
+
+	var recaptured *RecaptureError
+	if !errors.As(err, &recaptured) {
+		t.Fatalf("expected RecaptureError, got %T: %v", err, err)
+	}
+
+	wantProviders := "ANALYZE:E-PROVIDER-ANALYZE,CMP:E-PROVIDER-CMP,RLT:E-PROVIDER-RLT"
+	if em.REL["capability_providers"] != wantProviders {
+		t.Fatalf(
+			"providers = %q want %q",
+			em.REL["capability_providers"],
+			wantProviders,
+		)
+	}
+
+	wantProposal := "E-PROVIDER-ANALYZE->E-PROVIDER-CMP,E-PROVIDER-CMP->E-PROVIDER-RLT"
+	if em.REL["capability_provider_edge_proposal"] != wantProposal {
+		t.Fatalf(
+			"provider edge proposal = %q want %q",
+			em.REL["capability_provider_edge_proposal"],
+			wantProposal,
+		)
+	}
+
+	if _, exists := em.REL["COMPOSITION_KIN"]; exists {
+		t.Fatal("provider edge proposal self-authorized COMPOSITION_KIN")
+	}
+
+	state, err := livefield.Rebuild(mustEvents(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	admitted, ok := state.AtGOV[em.IDN]
+	if !ok {
+		t.Fatal("provider-edge proposal did not remain at HUMAN_FINAL review")
+	}
+
+	if admitted.REL["capability_provider_edge_proposal"] != wantProposal {
+		t.Fatal("stored provider-edge proposal changed")
+	}
+
+	if _, exists := admitted.REL["COMPOSITION_KIN"]; exists {
+		t.Fatal("stored proposal bypassed governed COMPOSITION_KIN")
+	}
+}
