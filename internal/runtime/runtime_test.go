@@ -2235,3 +2235,586 @@ func TestSAWSourceReentersGovernedExecutionAndRecapture(t *testing.T) {
 		t.Fatalf("execution signal not verified: %#v", signal.VAL)
 	}
 }
+
+func TestGovernedStateContextDiagnostic(t *testing.T) {
+	stateRoot := os.Getenv("FIELD_HOME")
+	if stateRoot == "" {
+		t.Skip("set FIELD_HOME to the existing runtime state root")
+	}
+
+	s, err := store.Open(stateRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store:    s,
+		Reasoner: reason.Heuristic{},
+	}
+
+	state, projected, err := r.governedStateContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf(
+		"accepted=%d governed_state_bytes=%d",
+		len(state.Accepted),
+		len(projected),
+	)
+
+	t.Logf("GOVERNED_STATE_BEGIN\\n%s\\nGOVERNED_STATE_END", projected)
+}
+
+func TestGemmaAnalyzeRealisticGovernedContextDiagnostic(t *testing.T) {
+	stateRoot := os.Getenv("FIELD_HOME")
+	binary := os.Getenv("GEMMA_BIN")
+	model := os.Getenv("GEMMA_MODEL")
+
+	if stateRoot == "" || binary == "" || model == "" {
+		t.Skip("set FIELD_HOME, GEMMA_BIN, and GEMMA_MODEL")
+	}
+
+	s, err := store.Open(stateRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store:    s,
+		Reasoner: reason.Heuristic{},
+	}
+
+	_, governedState, err := r.governedStateContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	source, err := os.ReadFile("../../docs/SYSTEM_STATUS.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(source) > 1200 {
+		source = source[:1200]
+	}
+
+	g := reason.GemmaCLI{
+		Binary:    binary,
+		Model:     model,
+		Threads:   4,
+		Context:   2048,
+		MaxTokens: 128,
+		Timeout:   180 * time.Second,
+		ExtraArgs: []string{"--seed", "1"},
+	}
+
+	start := time.Now()
+
+	got, err := g.Analyze(context.Background(), reason.Input{
+		Name:          "SYSTEM_STATUS.md",
+		Content:       source,
+		GovernedState: governedState,
+	})
+
+	elapsed := time.Since(start)
+
+	t.Logf(
+		"governed_state_bytes=%d source_bytes=%d elapsed=%s",
+		len(governedState),
+		len(source),
+		elapsed,
+	)
+
+	if err != nil {
+		t.Fatalf("realistic Gemma Analyze failed after %s: %v", elapsed, err)
+	}
+
+	t.Logf(
+		"summary=%q risk=%q facts=%d capabilities=%d gaps=%d",
+		got.Summary,
+		got.Risk,
+		len(got.Facts),
+		len(got.Capabilities),
+		len(got.Gaps),
+	)
+}
+
+func TestCoverageRecaptureDerivesRequiredCapability(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store:    s,
+		Reasoner: reason.Heuristic{},
+	}
+
+	_, cause := pivot.Observe(
+		"COVERAGE",
+		"CANDIDATE_COVERAGE_CLAIM",
+		"BRIDGEGAP_OBSERVATION",
+		"NO_UNRESOLVED_BRIDGEGAP",
+		func() error {
+			return errors.New("COVERAGE failed: BRIDGEGAP:capabilities")
+		},
+	)
+	if cause == nil {
+		t.Fatal("expected COVERAGE divergence")
+	}
+
+	em, duplicate, err := r.recapture(
+		context.Background(),
+		"",
+		nil,
+		cause,
+	)
+
+	if duplicate {
+		t.Fatal("RECAPTURE unexpectedly reported duplicate")
+	}
+
+	var recaptured *RecaptureError
+	if !errors.As(err, &recaptured) {
+		t.Fatalf("expected RecaptureError, got %T: %v", err, err)
+	}
+
+	if em.REL["required_capability"] != "DERIVE_CAPABILITY" {
+		t.Fatalf(
+			"required_capability = %q want DERIVE_CAPABILITY",
+			em.REL["required_capability"],
+		)
+	}
+
+	if em.STA != core.StateAtGOV {
+		t.Fatalf("RECAPTURE state = %q", em.STA)
+	}
+
+	if !em.VAL.Recoil || !em.VAL.WVC {
+		t.Fatal("RECAPTURE result is not verified")
+	}
+}
+
+type validatingGemmaCapabilityReasoner struct{}
+
+func (validatingGemmaCapabilityReasoner) Analyze(
+	_ context.Context,
+	_ reason.Input,
+) (reason.Result, error) {
+	return reason.Result{}, nil
+}
+
+func (validatingGemmaCapabilityReasoner) Name() string {
+	return "gemma-llama-cli"
+}
+
+func (validatingGemmaCapabilityReasoner) Version(context.Context) string {
+	return "test"
+}
+
+func (validatingGemmaCapabilityReasoner) Validate() error {
+	return nil
+}
+
+func TestRequiredCapabilityRemainsUnresolvedWhenCompositionIncomplete(t *testing.T) {
+	em := core.EmergION{
+		REL: map[string]string{
+			"required_capability": "DERIVE_CAPABILITY",
+		},
+		CAP: []string{"OBS", "CMP", "VLD"},
+	}
+
+	r := Runtime{
+		Reasoner: validatingGemmaCapabilityReasoner{},
+	}
+
+	r.resolveRequiredCapability(&em, core.EmptyState())
+
+	if em.REL["capability_resolution"] != "UNRESOLVED" {
+		t.Fatalf(
+			"resolution = %q want UNRESOLVED",
+			em.REL["capability_resolution"],
+		)
+	}
+
+	if got := em.REL["capability_composition"]; got != "" {
+		t.Fatalf("unexpected capability composition %q", got)
+	}
+}
+
+func TestRequiredCapabilityProducesComposableCandidateWhenAllInputsExist(t *testing.T) {
+	em := core.EmergION{
+		REL: map[string]string{
+			"required_capability": "DERIVE_CAPABILITY",
+		},
+		CAP: []string{"OBS", "CMP", "RLT", "VLD"},
+	}
+
+	r := Runtime{
+		Reasoner: validatingGemmaCapabilityReasoner{},
+	}
+
+	r.resolveRequiredCapability(&em, core.EmptyState())
+
+	if em.REL["capability_resolution"] != "COMPOSABLE_CANDIDATE" {
+		t.Fatalf(
+			"resolution = %q want COMPOSABLE_CANDIDATE",
+			em.REL["capability_resolution"],
+		)
+	}
+
+	if em.REL["capability_composition"] != "ANALYZE+CMP+RLT" {
+		t.Fatalf(
+			"composition = %q want ANALYZE+CMP+RLT",
+			em.REL["capability_composition"],
+		)
+	}
+}
+
+func TestRequiredCapabilityUsesREGAcceptedCapability(t *testing.T) {
+	accepted := core.EmergION{
+		IDN: "E-ACCEPTED-RLT",
+		STA: core.StateAccepted,
+		CAP: []string{"RLT"},
+	}
+
+	st := core.EmptyState()
+	st.Accepted[accepted.IDN] = accepted
+
+	em := core.EmergION{
+		REL: map[string]string{
+			"required_capability": "DERIVE_CAPABILITY",
+		},
+		CAP: []string{"OBS", "CMP", "VLD"},
+	}
+
+	r := Runtime{
+		Reasoner: validatingGemmaCapabilityReasoner{},
+	}
+
+	r.resolveRequiredCapability(&em, st)
+
+	if em.REL["capability_resolution"] != "COMPOSABLE_CANDIDATE" {
+		t.Fatalf(
+			"resolution = %q want COMPOSABLE_CANDIDATE",
+			em.REL["capability_resolution"],
+		)
+	}
+
+	if em.REL["capability_composition"] != "ANALYZE+CMP+RLT" {
+		t.Fatalf(
+			"composition = %q want ANALYZE+CMP+RLT",
+			em.REL["capability_composition"],
+		)
+	}
+}
+
+func TestRequiredCapabilityIgnoresNonAcceptedCapability(t *testing.T) {
+	notAccepted := core.EmergION{
+		IDN: "E-AT-GOV-RLT",
+		STA: core.StateAtGOV,
+		CAP: []string{"RLT"},
+	}
+
+	st := core.EmptyState()
+	st.AtGOV[notAccepted.IDN] = notAccepted
+
+	em := core.EmergION{
+		REL: map[string]string{
+			"required_capability": "DERIVE_CAPABILITY",
+		},
+		CAP: []string{"OBS", "CMP", "VLD"},
+	}
+
+	r := Runtime{
+		Reasoner: validatingGemmaCapabilityReasoner{},
+	}
+
+	r.resolveRequiredCapability(&em, st)
+
+	if em.REL["capability_resolution"] != "UNRESOLVED" {
+		t.Fatalf(
+			"resolution = %q want UNRESOLVED",
+			em.REL["capability_resolution"],
+		)
+	}
+
+	if got := em.REL["capability_composition"]; got != "" {
+		t.Fatalf("unexpected composition %q", got)
+	}
+}
+
+func TestRequiredCapabilityFromCoverageDivergence(t *testing.T) {
+	tests := []struct {
+		divergence string
+		want       string
+	}{
+		{"COVERAGE failed: BRIDGEGAP:capabilities", "DERIVE_CAPABILITY"},
+		{"COVERAGE failed: BRIDGEGAP:facts", "ESTABLISH_FACT"},
+		{"COVERAGE failed: BRIDGEGAP:relationships", "DERIVE_RELATIONSHIP"},
+		{"COVERAGE failed: BRIDGEGAP:unknown", ""},
+	}
+
+	for _, tt := range tests {
+		got := requiredCapabilityFromDivergence(pivot.Result{
+			Name:       "COVERAGE",
+			Divergence: tt.divergence,
+		})
+
+		if got != tt.want {
+			t.Fatalf(
+				"divergence %q required capability = %q want %q",
+				tt.divergence,
+				got,
+				tt.want,
+			)
+		}
+	}
+}
+
+func TestEstablishFactRequirementComposesFromSemanticCapabilities(t *testing.T) {
+	em := core.EmergION{
+		REL: map[string]string{
+			"required_capability": "ESTABLISH_FACT",
+		},
+		CAP: []string{"OBS", "VLD"},
+	}
+
+	r := Runtime{}
+	r.resolveRequiredCapability(&em, core.EmptyState())
+
+	if em.REL["capability_resolution"] != "COMPOSABLE_CANDIDATE" {
+		t.Fatalf(
+			"resolution = %q want COMPOSABLE_CANDIDATE",
+			em.REL["capability_resolution"],
+		)
+	}
+
+	if em.REL["capability_composition"] != "OBS+VLD" {
+		t.Fatalf(
+			"composition = %q want OBS+VLD",
+			em.REL["capability_composition"],
+		)
+	}
+}
+
+func TestDeriveRelationshipRequirementUsesAcceptedCapability(t *testing.T) {
+	st := core.EmptyState()
+	st.Accepted["E-ACCEPTED-RLT"] = core.EmergION{
+		IDN: "E-ACCEPTED-RLT",
+		STA: core.StateAccepted,
+		CAP: []string{"RLT"},
+	}
+
+	em := core.EmergION{
+		REL: map[string]string{
+			"required_capability": "DERIVE_RELATIONSHIP",
+		},
+		CAP: []string{"CMP"},
+	}
+
+	r := Runtime{}
+	r.resolveRequiredCapability(&em, st)
+
+	if em.REL["capability_resolution"] != "COMPOSABLE_CANDIDATE" {
+		t.Fatalf(
+			"resolution = %q want COMPOSABLE_CANDIDATE",
+			em.REL["capability_resolution"],
+		)
+	}
+
+	if em.REL["capability_composition"] != "CMP+RLT" {
+		t.Fatalf(
+			"composition = %q want CMP+RLT",
+			em.REL["capability_composition"],
+		)
+	}
+}
+
+func TestUnknownRequiredCapabilityFailsClosed(t *testing.T) {
+	em := core.EmergION{
+		REL: map[string]string{
+			"required_capability": "UNKNOWN_REQUIREMENT",
+		},
+		CAP: []string{"OBS", "CMP", "RLT", "VLD"},
+	}
+
+	r := Runtime{
+		Reasoner: validatingGemmaCapabilityReasoner{},
+	}
+
+	r.resolveRequiredCapability(&em, core.EmptyState())
+
+	if em.REL["capability_resolution"] != "UNRESOLVED" {
+		t.Fatalf(
+			"resolution = %q want UNRESOLVED",
+			em.REL["capability_resolution"],
+		)
+	}
+
+	if got := em.REL["capability_composition"]; got != "" {
+		t.Fatalf("unknown requirement produced composition %q", got)
+	}
+}
+
+func TestDeterministicBridgegapsDoNotBecomeCapabilityRequirements(t *testing.T) {
+	tests := []string{
+		"COVERAGE failed: BRIDGEGAP:source_hash",
+		"COVERAGE failed: BRIDGEGAP:evidence",
+		"COVERAGE failed: BRIDGEGAP:living_state_relationship",
+		"COVERAGE failed: BRIDGEGAP:living_state_projection",
+	}
+
+	for _, divergence := range tests {
+		got := requiredCapabilityFromDivergence(pivot.Result{
+			Name:       "COVERAGE",
+			Divergence: divergence,
+		})
+
+		if got != "" {
+			t.Fatalf(
+				"deterministic divergence %q produced required capability %q",
+				divergence,
+				got,
+			)
+		}
+	}
+}
+
+func TestUnprovenSummaryBridgegapRemainsUnresolved(t *testing.T) {
+	got := requiredCapabilityFromDivergence(pivot.Result{
+		Name:       "COVERAGE",
+		Divergence: "COVERAGE failed: BRIDGEGAP:summary",
+	})
+
+	if got != "" {
+		t.Fatalf(
+			"summary BRIDGEGAP produced unproven required capability %q",
+			got,
+		)
+	}
+}
+
+func TestUnknownBridgegapRemainsUnresolved(t *testing.T) {
+	got := requiredCapabilityFromDivergence(pivot.Result{
+		Name:       "COVERAGE",
+		Divergence: "COVERAGE failed: BRIDGEGAP:not_yet_known",
+	})
+
+	if got != "" {
+		t.Fatalf(
+			"unknown BRIDGEGAP produced required capability %q",
+			got,
+		)
+	}
+}
+
+func TestKnownCompositionalBridgegapsRemainMapped(t *testing.T) {
+	tests := []struct {
+		divergence string
+		want       string
+	}{
+		{
+			divergence: "COVERAGE failed: BRIDGEGAP:facts",
+			want:       "ESTABLISH_FACT",
+		},
+		{
+			divergence: "COVERAGE failed: BRIDGEGAP:capabilities",
+			want:       "DERIVE_CAPABILITY",
+		},
+		{
+			divergence: "COVERAGE failed: BRIDGEGAP:relationships",
+			want:       "DERIVE_RELATIONSHIP",
+		},
+	}
+
+	for _, tt := range tests {
+		got := requiredCapabilityFromDivergence(pivot.Result{
+			Name:       "COVERAGE",
+			Divergence: tt.divergence,
+		})
+
+		if got != tt.want {
+			t.Fatalf(
+				"divergence %q required capability = %q want %q",
+				tt.divergence,
+				got,
+				tt.want,
+			)
+		}
+	}
+}
+
+func TestCoverageRecaptureUsesGenericFactRequirement(t *testing.T) {
+	root := t.TempDir()
+
+	s, err := store.Open(filepath.Join(root, "state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := Runtime{
+		Store:    s,
+		Reasoner: reason.Heuristic{},
+	}
+
+	_, cause := pivot.Observe(
+		"COVERAGE",
+		"CANDIDATE_COVERAGE_CLAIM",
+		"BRIDGEGAP_OBSERVATION",
+		"NO_UNRESOLVED_BRIDGEGAP",
+		func() error {
+			return errors.New("COVERAGE failed: BRIDGEGAP:facts")
+		},
+	)
+	if cause == nil {
+		t.Fatal("expected COVERAGE divergence")
+	}
+
+	em, duplicate, err := r.recapture(
+		context.Background(),
+		"",
+		nil,
+		cause,
+	)
+
+	if duplicate {
+		t.Fatal("RECAPTURE unexpectedly reported duplicate")
+	}
+
+	var recaptured *RecaptureError
+	if !errors.As(err, &recaptured) {
+		t.Fatalf("expected RecaptureError, got %T: %v", err, err)
+	}
+
+	if em.REL["required_capability"] != "ESTABLISH_FACT" {
+		t.Fatalf(
+			"required_capability = %q want ESTABLISH_FACT",
+			em.REL["required_capability"],
+		)
+	}
+
+	if em.REL["capability_resolution"] != "COMPOSABLE_CANDIDATE" {
+		t.Fatalf(
+			"capability_resolution = %q want COMPOSABLE_CANDIDATE",
+			em.REL["capability_resolution"],
+		)
+	}
+
+	if em.REL["capability_composition"] != "OBS+VLD" {
+		t.Fatalf(
+			"capability_composition = %q want OBS+VLD",
+			em.REL["capability_composition"],
+		)
+	}
+
+	if em.STA != core.StateAtGOV {
+		t.Fatalf("RECAPTURE state = %q want %q", em.STA, core.StateAtGOV)
+	}
+
+	if !em.VAL.Recoil || !em.VAL.WVC {
+		t.Fatal("generic requirement RECAPTURE did not pass RECOIL/WVC")
+	}
+}

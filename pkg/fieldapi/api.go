@@ -91,3 +91,44 @@ func (r *Runtime) Render(dir string) error {
 	}
 	return proj.HTML(filepath.Join(dir, "field.html"), st)
 }
+
+func (r *Runtime) CirculateSAWs(
+	ctx context.Context,
+) ([]core.EmergION, error) {
+	st, err := r.state()
+	if err != nil {
+		return nil, err
+	}
+
+	sources, err := proj.SAWSources(st)
+	if err != nil {
+		return nil, err
+	}
+
+	runtime := fieldruntime.Runtime{
+		Store:    r.store,
+		Reasoner: r.reasoner,
+	}
+
+	out := make([]core.EmergION, 0, len(sources))
+
+	for _, source := range sources {
+		em, duplicate, err := runtime.CaptureBytes(
+			ctx,
+			source.ID,
+			source.Content,
+			"saw_projection",
+		)
+		if err != nil {
+			return out, err
+		}
+
+		if duplicate {
+			continue
+		}
+
+		out = append(out, em)
+	}
+
+	return out, nil
+}

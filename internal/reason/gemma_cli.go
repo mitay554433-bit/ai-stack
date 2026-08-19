@@ -3,6 +3,7 @@ package reason
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,8 +55,15 @@ func discoverBinary(explicit string) string {
 	if p, err := exec.LookPath("llama-cli"); err == nil {
 		return p
 	}
+	if p, err := exec.LookPath("llama-completion"); err == nil {
+		return p
+	}
 	home, _ := os.UserHomeDir()
 	for _, p := range []string{
+		filepath.Join(home, "llama.cpp", "build", "bin", "llama-completion"),
+		filepath.Join(home, "bin", "llama-completion"),
+		filepath.Join(home, "llama-completion"),
+		"/usr/local/bin/llama-completion",
 		filepath.Join(home, "llama.cpp", "build", "bin", "llama-cli"),
 		filepath.Join(home, "bin", "llama-cli"),
 		filepath.Join(home, "llama-cli"),
@@ -165,6 +173,15 @@ func (g GemmaCLI) Validate() error {
 	return nil
 }
 
+const mxpdGrammar = `root ::= summary risk fact capability end
+summary ::= "S|" text "\n"
+risk ::= "K|" ("L" | "M" | "H") "\n"
+fact ::= "F|" text "\n"
+capability ::= "C|can " text "\n"
+end ::= "Z"
+text ::= [^|\r\n]+
+`
+
 func gemmaArgs(g GemmaCLI, prompt string) []string {
 	args := []string{
 		"-m", g.Model,
@@ -181,9 +198,10 @@ func gemmaArgs(g GemmaCLI, prompt string) []string {
 	args = append(args,
 		"--log-disable",
 		"--color", "off",
+		"--grammar", mxpdGrammar,
 		"--single-turn",
-		"--simple-io",
 		"--no-display-prompt",
+		"--output-file", "/dev/stdout",
 	)
 
 	return args
@@ -211,6 +229,9 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 	}
 
 	contentLimit := inputBytes - len(governedState)
+	if contentLimit > 1000 {
+		contentLimit = 1000
+	}
 	if contentLimit < 1 {
 		return Result{}, fmt.Errorf("Gemma context exhausted by governed state")
 	}
@@ -218,83 +239,224 @@ func (g GemmaCLI) Analyze(ctx context.Context, in Input) (Result, error) {
 		content = content[:contentLimit]
 	}
 	prompt := buildPrompt(in.Name, content, governedState)
-	args := gemmaArgs(g, prompt)
-	cctx, cancel := context.WithTimeout(ctx, g.Timeout)
-	defer cancel()
-	cmd := exec.CommandContext(cctx, g.Binary, args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if cctx.Err() != nil {
-			return Result{}, fmt.Errorf("Gemma timed out: %w", cctx.Err())
+
+	for attempt := 0; attempt < 2; attempt++ {
+		args := gemmaArgs(g, prompt)
+
+		cctx, cancel := context.WithTimeout(ctx, g.Timeout)
+		cmd := exec.CommandContext(cctx, g.Binary, args...)
+
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+
+		runErr := cmd.Run()
+		ctxErr := cctx.Err()
+		cancel()
+
+		if runErr != nil {
+			if errors.Is(ctxErr, context.DeadlineExceeded) {
+				return Result{}, fmt.Errorf("Gemma timed out: %w", ctxErr)
+			}
+			return Result{}, fmt.Errorf(
+				"Gemma failed: %w: %s",
+				runErr,
+				trim(stderr.String(), 500),
+			)
 		}
-		return Result{}, fmt.Errorf("Gemma failed: %w: %s", err, trim(stderr.String(), 500))
-	}
-	res, err := parseResult(stdout.String())
-	if err == nil {
-		return res, nil
+
+		candidates := []string{
+			stdout.String(),
+			stderr.String(),
+			stdout.String() + "\n" + stderr.String(),
+		}
+
+		var parseErr error
+		var validationErr error
+
+		for _, candidate := range candidates {
+			res, err := parseResult(candidate)
+			if err != nil {
+				parseErr = err
+				continue
+			}
+
+			if err := rejectPromptPlaceholders(res, content); err != nil {
+				validationErr = err
+				break
+			}
+
+			return res, nil
+		}
+
+		if validationErr != nil {
+			if attempt == 0 {
+				prompt = buildPrompt(in.Name, content, governedState) +
+					"\n\nCORRECTION REQUIRED:\nPrevious candidate was rejected: " +
+					validationErr.Error() +
+					"\nCorrect only the rejected semantic defect. " +
+					"Remain grounded in SOURCE. Return one valid grammar-constrained MXPD record."
+				continue
+			}
+			return Result{}, validationErr
+		}
+
+		return Result{}, fmt.Errorf(
+			"Gemma output invalid: %w; stdout=%s; stderr=%s",
+			parseErr,
+			trim(stdout.String(), 500),
+			trim(stderr.String(), 500),
+		)
 	}
 
-	if alt, altErr := parseResult(stderr.String()); altErr == nil {
-		return alt, nil
+	return Result{}, fmt.Errorf("Gemma semantic retry exhausted")
+}
+
+func sourceSupportsFact(source, fact string) bool {
+	source = strings.ToLower(strings.TrimSpace(source))
+	fact = strings.ToLower(strings.TrimSpace(fact))
+	if source == "" || fact == "" {
+		return false
 	}
 
-	combined := stdout.String() + "\n" + stderr.String()
-	if alt, altErr := parseResult(combined); altErr == nil {
-		return alt, nil
+	split := func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'))
 	}
 
-	return Result{}, fmt.Errorf(
-		"Gemma output invalid: %w; stdout=%s; stderr=%s",
-		err,
-		trim(stdout.String(), 500),
-		trim(stderr.String(), 500),
-	)
+	stop := map[string]bool{
+		"that":   true,
+		"this":   true,
+		"with":   true,
+		"from":   true,
+		"into":   true,
+		"only":   true,
+		"after":  true,
+		"before": true,
+		"system": true,
+	}
+
+	seen := map[string]bool{}
+	required := 0
+	matched := 0
+
+	for _, token := range strings.FieldsFunc(fact, split) {
+		if len(token) < 4 || stop[token] || seen[token] {
+			continue
+		}
+		seen[token] = true
+		required++
+		if strings.Contains(source, token) {
+			matched++
+		}
+	}
+
+	if required == 0 {
+		return strings.Contains(source, fact)
+	}
+	if required == 1 {
+		return matched == 1
+	}
+	return matched >= 2
+}
+
+func rejectPromptPlaceholders(r Result, source string) error {
+	if strings.EqualFold(strings.TrimSpace(r.Summary), "one sentence summary") {
+		return fmt.Errorf("Gemma output rejected: prompt placeholder summary")
+	}
+
+	for _, fact := range r.Facts {
+		if strings.EqualFold(strings.TrimSpace(fact), "one evidenced fact") {
+			return fmt.Errorf("Gemma output rejected: prompt placeholder fact")
+		}
+	}
+
+	for _, capability := range r.Capabilities {
+		if strings.EqualFold(strings.TrimSpace(capability), "one transferable capability") {
+			return fmt.Errorf("Gemma output rejected: prompt placeholder capability")
+		}
+	}
+
+	for _, fact := range r.Facts {
+		if !sourceSupportsFact(source, fact) {
+			return fmt.Errorf("Gemma output rejected: fact lacks source support")
+		}
+	}
+
+	upperSummary := strings.ToUpper(strings.TrimSpace(r.Summary))
+	for _, prefix := range []string{"S:", "F:", "C:", "K:", "G:", "L:", "H:", "U:", "T:", "N:", "E:", "M:"} {
+		if strings.HasPrefix(upperSummary, prefix) {
+			return fmt.Errorf("Gemma output rejected: summary begins with field label %s", prefix)
+		}
+	}
+
+	for _, capability := range r.Capabilities {
+		capability = strings.TrimSpace(capability)
+		for _, fact := range r.Facts {
+			if strings.EqualFold(capability, strings.TrimSpace(fact)) {
+				return fmt.Errorf("Gemma output rejected: capability duplicates fact")
+			}
+		}
+	}
+
+	if strings.HasPrefix(strings.TrimSpace(r.Summary), ":") {
+		return fmt.Errorf("Gemma output rejected: summary begins with punctuation")
+	}
+
+	for _, fact := range r.Facts {
+		if strings.HasPrefix(strings.TrimSpace(fact), ":") {
+			return fmt.Errorf("Gemma output rejected: fact begins with punctuation")
+		}
+	}
+
+	for _, capability := range r.Capabilities {
+		capability = strings.TrimSpace(capability)
+		if strings.HasPrefix(capability, ":") {
+			return fmt.Errorf("Gemma output rejected: capability begins with punctuation")
+		}
+
+		normalized := strings.ToLower(strings.TrimSpace(strings.TrimRight(capability, ".!?")))
+		switch normalized {
+		case "can be repeated", "can work", "can operate", "can function", "can perform", "can be used":
+			return fmt.Errorf("Gemma output rejected: vacuous capability")
+		}
+	}
+
+	return nil
 }
 
 func buildPrompt(name, content, governedState string) string {
 	return `@L:MXPD/2
 @T:REDUCE
-AX[S!=T;M!=T;GOV>D;REG>A;NI;FC]
-OUT[S|x;H|archonym;K|L|M|H;L|k|v;C|x;F|x;G|x;U|id;T|facet;N|id|system|state;E|from|to|kind;M|model|customer|value|revenue_path;Z]
-SEM[F=required_mechanism|algorithm|equation|invariant|state_transition;C=transferable_behavior;L=essential_relation;G=missing_mechanism|nonessential_baggage;N=component;E=flow]
-KEEP[math,state,order,constraints,input,transform,output]
-DROP_AS_G_ONLY_IF_NONESSENTIAL[wrapper,serialization,SDK,framework,presentation,duplication,dependency_plumbing]
-FACET[FIELD_COMMAND,EMERGENCE_CAPTURE,PROGRAM_FORGE,PRODUCT_STORE,CUSTOMERS_SALES,COMMUNICATIONS,PAYMENTS_FINANCE,GRANT_FUNDING,PATENT_IP,MA_PARTNERSHIPS,DOCS_PROJECTION,ANALYTICS_FORECAST]
-RULE[FIELD_COMMAND=runtime|state|governance_control;NO_INVENT;NO_AUTH_INFER;Z_REQUIRED]
 
-OUTPUT CONTRACT:
-- Output primitive lines only.
-- Use the vertical pipe character | as the delimiter.
-- Never replace | with a colon.
-- S| MUST contain a non-empty one-sentence summary.
-- H| MAY contain one canonical semantic Archonym; omit it when unsupported.
-- K| MUST be exactly K|L, K|M, or K|H.
-- F| contains an evidenced fact.
-- C| contains a transferable capability.
-- G| contains an evidenced gap when present.
-- L|key|value contains an evidenced relationship when present.
-- Z MUST be the final line.
-- No markdown.
-- No prose outside primitive lines.
+SOURCE:` + filepath.Base(name) + `
+` + content + `
 
-RISK:
-K|L = bounded/local/no evidenced harmful authority
-K|M = uncertainty, missing evidence, or meaningful operational risk
-K|H = external authority, destructive action, transfer, deployment, or serious evidenced risk
+Produce one bounded MXPD machine record from SOURCE.
 
-MINIMUM VALID SHAPE:
-S|non-empty summary
-K|L
-F|evidenced fact
-C|transferable capability
-Z
+S = concise natural-language statement of the main meaning proved by SOURCE.
+K = L, M, or H.
+F = one concrete source-supported observation or verified state.
+C = one reusable behavior, mechanism, or operational ability evidenced by SOURCE.
+Z = final terminator.
 
-:
+S, F, and C MUST come from SOURCE.
+S must state SOURCE meaning directly and must not repeat instruction wording such as
+"summary supported by SOURCE", "meaningful natural-language summary", or field definitions.
+F must describe what is evidenced or verified.
+C must describe what the system can repeatedly do because of that evidence.
+A test result alone is a fact, not a capability.
+Examples of capability form include verifying integrity, preserving evidence,
+preventing duplicate candidates, enforcing governed admission, or rebuilding projection state.
+Do not use protocol tokens, governance tokens, record keys, field labels,
+single letters, AX, GOV, REG, NI, or FC as S, F, or C values.
+Do not invent facts, capabilities, relationships, or authority.
+
+GOVERNED_STATE is comparison context only:
 ` + governedState + `
-:` + filepath.Base(name) + `
-` + content
+
+AX[S!=T;M!=T;GOV>D;REG>A;NI;FC]
+Generated structure is constrained by the runtime grammar.
+No markdown or explanatory prose.`
 }
 func parseResult(s string) (Result, error) {
 	r := Result{Relationships: map[string]string{}}

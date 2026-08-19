@@ -156,6 +156,102 @@ func coverage(em *core.EmergION, governedState string) error {
 	return nil
 }
 
+func requiredCapabilityFromDivergence(result pivot.Result) string {
+	if result.Name != "COVERAGE" {
+		return ""
+	}
+
+	switch {
+	case strings.Contains(result.Divergence, "BRIDGEGAP:capabilities"):
+		return "DERIVE_CAPABILITY"
+	case strings.Contains(result.Divergence, "BRIDGEGAP:facts"):
+		return "ESTABLISH_FACT"
+	case strings.Contains(result.Divergence, "BRIDGEGAP:relationships"):
+		return "DERIVE_RELATIONSHIP"
+	default:
+		return ""
+	}
+}
+
+func requiredCapabilityRecipe(required string) []string {
+	switch strings.TrimSpace(required) {
+	case "DERIVE_CAPABILITY":
+		return []string{"ANALYZE", "CMP", "RLT"}
+	case "ESTABLISH_FACT":
+		return []string{"OBS", "VLD"}
+	case "DERIVE_RELATIONSHIP":
+		return []string{"CMP", "RLT"}
+	default:
+		return nil
+	}
+}
+
+func (r Runtime) resolveRequiredCapability(
+	em *core.EmergION,
+	st core.State,
+) {
+	if em == nil || em.REL == nil {
+		return
+	}
+
+	required := strings.TrimSpace(em.REL["required_capability"])
+	if required == "" {
+		return
+	}
+
+	em.REL["capability_resolution"] = "UNRESOLVED"
+	delete(em.REL, "capability_composition")
+
+	available := map[string]bool{}
+
+	if r.Reasoner != nil && r.Reasoner.Name() == "gemma-llama-cli" {
+		validator, ok := r.Reasoner.(interface{ Validate() error })
+		if ok && validator.Validate() == nil {
+			for _, adapter := range adapters.Catalog(true) {
+				if !adapter.Enabled {
+					continue
+				}
+				for _, capability := range adapter.Capabilities {
+					capability = strings.ToUpper(strings.TrimSpace(capability))
+					if capability != "" {
+						available[capability] = true
+					}
+				}
+			}
+		}
+	}
+
+	for _, capability := range em.CAP {
+		capability = strings.ToUpper(strings.TrimSpace(capability))
+		if capability != "" {
+			available[capability] = true
+		}
+	}
+
+	for _, accepted := range st.Accepted {
+		for _, capability := range accepted.CAP {
+			capability = strings.ToUpper(strings.TrimSpace(capability))
+			if capability != "" {
+				available[capability] = true
+			}
+		}
+	}
+
+	recipe := requiredCapabilityRecipe(required)
+	if len(recipe) == 0 {
+		return
+	}
+
+	for _, requiredPart := range recipe {
+		if !available[requiredPart] {
+			return
+		}
+	}
+
+	em.REL["capability_resolution"] = "COMPOSABLE_CANDIDATE"
+	em.REL["capability_composition"] = strings.Join(recipe, "+")
+}
+
 func expectedProtectorEnvelope(capabilities []string) (string, string) {
 	authority := map[string]bool{}
 	catalog := adapters.Catalog(false)
@@ -640,6 +736,29 @@ func (r Runtime) recapture(
 	}
 
 	em := divergence.EmergION
+
+	if em.REL == nil {
+		em.REL = map[string]string{}
+	}
+
+	if required := requiredCapabilityFromDivergence(divergence.Result); required != "" {
+		em.REL["required_capability"] = required
+	}
+
+	eventsForCapabilities, err := r.Store.Events()
+	if err != nil {
+		_, _ = r.Store.PruneOrphans()
+		return em, false, err
+	}
+
+	capabilityState, err := livefield.Rebuild(eventsForCapabilities)
+	if err != nil {
+		_, _ = r.Store.PruneOrphans()
+		return em, false, err
+	}
+
+	r.resolveRequiredCapability(&em, capabilityState)
+
 	if em.EVO.Metadata == nil {
 		em.EVO.Metadata = &core.Metadata{
 			Topology:     core.TopologyDodecahedronV1,
@@ -747,6 +866,15 @@ func (r Runtime) Capture(ctx context.Context, path string, removeOnSuccess bool)
 	}
 
 	return em, duplicate, nil
+}
+
+func (r Runtime) CaptureBytes(
+	ctx context.Context,
+	name string,
+	b []byte,
+	provenance string,
+) (core.EmergION, bool, error) {
+	return r.captureBytes(ctx, name, b, provenance)
 }
 
 func (r Runtime) captureBytes(

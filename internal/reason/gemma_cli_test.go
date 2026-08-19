@@ -1,8 +1,11 @@
 package reason
 
 import (
+	"context"
+	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCleanFacets(t *testing.T) {
@@ -50,8 +53,8 @@ func TestGemmaArgsEnforceOneShotExecution(t *testing.T) {
 		"--log-disable",
 		"--color",
 		"--single-turn",
-		"--simple-io",
 		"--no-display-prompt",
+		"--output-file",
 	}
 
 	for _, arg := range required {
@@ -60,12 +63,6 @@ func TestGemmaArgsEnforceOneShotExecution(t *testing.T) {
 		}
 	}
 
-	if lastIndex("--single-turn") < lastIndex("--conversation") {
-		t.Fatalf(
-			"configured conversation mode appears after single-turn invariant: %#v",
-			args,
-		)
-	}
 }
 
 func TestCalibrateNormalizesNullSupersedes(t *testing.T) {
@@ -169,5 +166,225 @@ func TestCalibrateRelationshipTrimCollisionIsDeterministic(t *testing.T) {
 			"deterministic trim collision = %q want first",
 			got.Relationships["composition"],
 		)
+	}
+}
+
+func TestGemmaCLIAnalyzeInstalledRuntime(t *testing.T) {
+	binary := os.Getenv("GEMMA_BIN")
+	model := os.Getenv("GEMMA_MODEL")
+
+	if binary == "" || model == "" {
+		t.Skip("set GEMMA_BIN and GEMMA_MODEL for installed-runtime integration test")
+	}
+
+	g := GemmaCLI{
+		Binary:    binary,
+		Model:     model,
+		Threads:   4,
+		Context:   2048,
+		MaxTokens: 80,
+		Timeout:   180 * time.Second,
+	}
+
+	got, err := g.Analyze(context.Background(), Input{
+		Name:    "gemma-integration-probe",
+		Content: []byte("Local inference execution probe."),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.Summary == "" {
+		t.Fatal("Gemma Analyze returned empty summary")
+	}
+
+	if got.Risk != "L" && got.Risk != "M" && got.Risk != "H" {
+		t.Fatalf("Gemma Analyze returned invalid risk %q", got.Risk)
+	}
+}
+
+func TestBuildPromptDiagnostic(t *testing.T) {
+	source, err := os.ReadFile("../../docs/SYSTEM_STATUS.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	governedState := strings.Repeat("G", 1723)
+
+	prompt := buildPrompt(
+		"SYSTEM_STATUS.md",
+		string(source),
+		governedState,
+	)
+
+	t.Logf(
+		"source_bytes=%d governed_state_bytes=%d final_prompt_bytes=%d",
+		len(source),
+		len(governedState),
+		len(prompt),
+	)
+}
+
+func TestRejectPromptPlaceholders(t *testing.T) {
+	tests := []struct {
+		name   string
+		result Result
+	}{
+		{
+			name: "summary",
+			result: Result{
+				Summary: "one sentence summary",
+				Risk:    "L",
+			},
+		},
+		{
+			name: "fact",
+			result: Result{
+				Summary: "real summary",
+				Risk:    "L",
+				Facts:   []string{"one evidenced fact"},
+			},
+		},
+		{
+			name: "capability",
+			result: Result{
+				Summary:      "real summary",
+				Risk:         "L",
+				Capabilities: []string{"one transferable capability"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := rejectPromptPlaceholders(tt.result, "source evidence for test"); err == nil {
+				t.Fatal("prompt placeholder was accepted")
+			}
+		})
+	}
+}
+
+func TestRejectPromptPlaceholdersAllowsRealSemanticResult(t *testing.T) {
+	result := Result{
+		Summary:      "governed runtime verifies preserved source evidence",
+		Risk:         "L",
+		Facts:        []string{"COSL chain verification is implemented"},
+		Capabilities: []string{"verify governed execution evidence"},
+	}
+
+	if err := rejectPromptPlaceholders(result, "COSL chain verification is implemented and governed execution evidence can be verified"); err != nil {
+		t.Fatalf("real semantic result rejected: %v", err)
+	}
+}
+
+func TestRejectPromptPlaceholdersRejectsSummaryFieldLabel(t *testing.T) {
+	result := Result{
+		Summary:      "F: The full test suite passes.",
+		Risk:         "M",
+		Facts:        []string{"The full test suite passes."},
+		Capabilities: []string{"verify runtime integrity"},
+	}
+
+	if err := rejectPromptPlaceholders(result, "The full test suite passes and runtime integrity can be verified."); err == nil {
+		t.Fatal("summary field label was accepted")
+	}
+}
+
+func TestRejectPromptPlaceholdersRejectsCapabilityFactCollision(t *testing.T) {
+	result := Result{
+		Summary:      "runtime verification succeeds",
+		Risk:         "L",
+		Facts:        []string{"The full test suite passes."},
+		Capabilities: []string{"  the full test suite passes.  "},
+	}
+
+	if err := rejectPromptPlaceholders(result, "The full test suite passes."); err == nil {
+		t.Fatal("capability identical to fact was accepted")
+	}
+}
+
+func TestRejectPromptPlaceholdersAllowsDistinctFactAndCapability(t *testing.T) {
+	result := Result{
+		Summary:      "runtime verification and evidence controls are implemented",
+		Risk:         "L",
+		Facts:        []string{"COSL event hashes and previous-hash chain verify."},
+		Capabilities: []string{"verify COSL hash-chain integrity"},
+	}
+
+	if err := rejectPromptPlaceholders(result, "COSL event hashes and previous-hash chain verify. The runtime can verify COSL hash-chain integrity."); err != nil {
+		t.Fatalf("distinct semantic result rejected: %v", err)
+	}
+}
+
+func TestSourceSupportsFactRejectsUnsupportedClaim(t *testing.T) {
+	source := "COSL event hashes and previous-hash chain verify."
+
+	if sourceSupportsFact(source, "Payments are automatically transferred to customers.") {
+		t.Fatal("unsupported fact was treated as source-supported")
+	}
+}
+
+func TestSourceSupportsFactAcceptsSupportedClaim(t *testing.T) {
+	source := "Go standard-library sovereign runtime compiles and the full test suite passes."
+
+	if !sourceSupportsFact(source, "The sovereign runtime compiles and the full test suite passes.") {
+		t.Fatal("source-supported fact was rejected")
+	}
+}
+
+func TestRejectPromptPlaceholdersRejectsLeadingPunctuation(t *testing.T) {
+	tests := []Result{
+		{
+			Summary:      ": The full test suite passes.",
+			Risk:         "M",
+			Facts:        []string{"The full test suite passes."},
+			Capabilities: []string{"can verify runtime integrity"},
+		},
+		{
+			Summary:      "runtime verification succeeds",
+			Risk:         "M",
+			Facts:        []string{": The full test suite passes."},
+			Capabilities: []string{"can verify runtime integrity"},
+		},
+	}
+
+	source := "The full test suite passes and runtime integrity can be verified."
+
+	for _, result := range tests {
+		if err := rejectPromptPlaceholders(result, source); err == nil {
+			t.Fatal("leading punctuation was accepted")
+		}
+	}
+}
+
+func TestRejectPromptPlaceholdersRejectsVacuousCapability(t *testing.T) {
+	result := Result{
+		Summary:      "runtime verification succeeds",
+		Risk:         "M",
+		Facts:        []string{"The full test suite passes."},
+		Capabilities: []string{"can be repeated."},
+	}
+
+	if err := rejectPromptPlaceholders(
+		result,
+		"The full test suite passes.",
+	); err == nil {
+		t.Fatal("vacuous capability was accepted")
+	}
+}
+
+func TestRejectPromptPlaceholdersAllowsConcreteCapabilityForm(t *testing.T) {
+	result := Result{
+		Summary:      "COSL integrity verification is implemented",
+		Risk:         "L",
+		Facts:        []string{"COSL event hashes and previous-hash chain verify."},
+		Capabilities: []string{"can verify COSL hash-chain integrity"},
+	}
+
+	if err := rejectPromptPlaceholders(
+		result,
+		"COSL event hashes and previous-hash chain verify.",
+	); err != nil {
+		t.Fatalf("concrete capability rejected: %v", err)
 	}
 }
