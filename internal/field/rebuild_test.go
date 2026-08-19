@@ -728,3 +728,150 @@ func TestREGReplayAllowsArchonymContinuationAcrossAcceptedKinAncestry(t *testing
 		}
 	}
 }
+
+func TestREGReplayAllowsArchonymContinuationFromGovernedReturnedPredecessor(t *testing.T) {
+	returned := core.EmergION{
+		IDN: "E-ARCHONYM-RETURNED",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{
+			Version: 1,
+			Metadata: &core.Metadata{
+				Archonym: "VERITEX CORE",
+			},
+		},
+	}
+
+	successor := core.EmergION{
+		IDN: "E-ARCHONYM-RETURNED-SUCCESSOR",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{
+			Version:    2,
+			Supersedes: returned.IDN,
+			Metadata: &core.Metadata{
+				Archonym: "VERITEX CORE",
+			},
+		},
+	}
+
+	events := []core.Event{
+		{
+			Type:     "C",
+			ID:       "EV-C-ARCHONYM-RETURNED",
+			EmergION: &returned,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-ARCHONYM-RETURN",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: returned.IDN,
+				Decision:   "RETURN",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type:     "C",
+			ID:       "EV-C-ARCHONYM-RETURNED-SUCCESSOR",
+			EmergION: &successor,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-ARCHONYM-RETURNED-SUCCESSOR",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: successor.IDN,
+				Decision:   "APPROVE",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "R",
+			ID:   "EV-R-ARCHONYM-RETURNED-SUCCESSOR",
+			REG: &core.REGReceipt{
+				EmergIONID: successor.IDN,
+				DecisionID: "EV-D-ARCHONYM-RETURNED-SUCCESSOR",
+			},
+		},
+	}
+
+	st, err := Rebuild(events)
+	if err != nil {
+		t.Fatalf(
+			"governed Archonym continuation from HUMAN_FINAL RETURNED predecessor rejected: %v",
+			err,
+		)
+	}
+
+	if _, ok := st.Returned[returned.IDN]; !ok {
+		t.Fatal("governed returned predecessor missing from returned state")
+	}
+
+	if _, ok := st.Accepted[successor.IDN]; !ok {
+		t.Fatal("governed Archonym successor did not enter accepted state")
+	}
+}
+
+func TestREGReplayRejectsArchonymReuseAfterReturnWithoutReturnedKinLink(t *testing.T) {
+	returned := core.EmergION{
+		IDN: "E-ARCHONYM-RETURNED-OWNER",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{
+			Version: 1,
+			Metadata: &core.Metadata{
+				Archonym: "VERITEX CORE",
+			},
+		},
+	}
+
+	unlinked := core.EmergION{
+		IDN: "E-ARCHONYM-UNLINKED-CLAIMANT",
+		STA: core.StateAtGOV,
+		EVO: core.Evolution{
+			Version: 1,
+			Metadata: &core.Metadata{
+				Archonym: "VERITEX CORE",
+			},
+		},
+	}
+
+	events := []core.Event{
+		{
+			Type:     "C",
+			ID:       "EV-C-ARCHONYM-RETURNED-OWNER",
+			EmergION: &returned,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-ARCHONYM-RETURNED-OWNER",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: returned.IDN,
+				Decision:   "RETURN",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type:     "C",
+			ID:       "EV-C-ARCHONYM-UNLINKED-CLAIMANT",
+			EmergION: &unlinked,
+		},
+		{
+			Type: "D",
+			ID:   "EV-D-ARCHONYM-UNLINKED-CLAIMANT",
+			Decision: &core.DecisionReceipt{
+				EmergIONID: unlinked.IDN,
+				Decision:   "APPROVE",
+				Authority:  "HUMAN_FINAL",
+			},
+		},
+		{
+			Type: "R",
+			ID:   "EV-R-ARCHONYM-UNLINKED-CLAIMANT",
+			REG: &core.REGReceipt{
+				EmergIONID: unlinked.IDN,
+				DecisionID: "EV-D-ARCHONYM-UNLINKED-CLAIMANT",
+			},
+		},
+	}
+
+	if _, err := Rebuild(events); err == nil {
+		t.Fatal("unlinked EmergION reused governed returned Archonym")
+	}
+}

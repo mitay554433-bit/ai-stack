@@ -147,6 +147,51 @@ func Rebuild(events []core.Event) (core.State, error) {
 							archonym,
 							acceptedID,
 						)
+
+					}
+
+					for returnedID, returned := range st.Returned {
+						if returned.EVO.Metadata == nil {
+							continue
+						}
+
+						returnedArchonym := strings.TrimSpace(returned.EVO.Metadata.Archonym)
+						if returnedArchonym == "" || !strings.EqualFold(archonym, returnedArchonym) {
+							continue
+						}
+
+						predecessor := strings.TrimSpace(em.EVO.Supersedes)
+						seen := map[string]bool{}
+						sameKin := false
+
+						for predecessor != "" {
+							if seen[predecessor] {
+								return st, fmt.Errorf("Kin lineage cycle at %s", predecessor)
+							}
+							seen[predecessor] = true
+
+							if predecessor == returnedID {
+								sameKin = true
+								break
+							}
+
+							ancestor, ok := st.Accepted[predecessor]
+							if !ok {
+								break
+							}
+
+							predecessor = strings.TrimSpace(ancestor.EVO.Supersedes)
+						}
+
+						if sameKin {
+							continue
+						}
+
+						return st, fmt.Errorf(
+							"Archonym %q already belongs to HUMAN_FINAL RETURNED sovereign EmergION %s",
+							archonym,
+							returnedID,
+						)
 					}
 				}
 			}
