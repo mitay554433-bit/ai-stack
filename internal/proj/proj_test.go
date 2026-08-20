@@ -720,110 +720,7 @@ func TestSAWDoesNotExistWithoutGovernedComposition(t *testing.T) {
 	}
 }
 
-func TestLIBIndexesDerivedSAWsOnly(t *testing.T) {
-	a := core.EmergION{
-		IDN: "E-LIB-A",
-		STA: core.StateAccepted,
-		MEM: core.Memory{
-			SourceHash: "lib-a",
-		},
-		REL: map[string]string{
-			"COMPOSITION_KIN": "E-LIB-B",
-		},
-		CAP: []string{"PROGRAM"},
-	}
-
-	b := core.EmergION{
-		IDN: "E-LIB-B",
-		STA: core.StateAccepted,
-		MEM: core.Memory{
-			SourceHash: "lib-b",
-		},
-		CAP: []string{"ANALYZE"},
-	}
-
-	unrelated := core.EmergION{
-		IDN: "E-LIB-UNRELATED",
-		STA: core.StateAccepted,
-		MEM: core.Memory{
-			SourceHash: "lib-unrelated",
-		},
-		CAP: []string{"OBS"},
-	}
-
-	st := core.EmptyState()
-	st.Accepted[a.IDN] = a
-	st.Accepted[b.IDN] = b
-	st.Accepted[unrelated.IDN] = unrelated
-
-	first, err := buildLIB(st)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	second, err := buildLIB(st)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(first) != 1 || len(second) != 1 {
-		t.Fatalf(
-			"LIB counts = %d %d want 1 1",
-			len(first),
-			len(second),
-		)
-	}
-
-	if first[0].SAWID != second[0].SAWID {
-		t.Fatalf(
-			"LIB rebuild changed SAW identity: %q %q",
-			first[0].SAWID,
-			second[0].SAWID,
-		)
-	}
-
-	if first[0].SAABID == "" {
-		t.Fatal("LIB entry lost SAAB lineage")
-	}
-
-	if len(first[0].MemberPRMIDs) != 2 {
-		t.Fatalf(
-			"LIB member PRMs = %#v",
-			first[0].MemberPRMIDs,
-		)
-	}
-
-	for _, id := range first[0].MemberPRMIDs {
-		if id == unrelated.IDN {
-			t.Fatal("unrelated accepted PRM entered LIB")
-		}
-	}
-
-	if len(st.Accepted) != 3 {
-		t.Fatal("LIB rebuild mutated accepted state")
-	}
-}
-
-func TestLIBDoesNotBecomeAuthority(t *testing.T) {
-	st := core.EmptyState()
-
-	entries, err := buildLIB(st)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(entries) != 0 {
-		t.Fatalf("empty accepted state produced LIB entries: %#v", entries)
-	}
-
-	if len(st.Accepted) != 0 ||
-		len(st.Approved) != 0 ||
-		len(st.AtGOV) != 0 {
-		t.Fatal("LIB derivation created authoritative state")
-	}
-}
-
-func TestCommercialMetadataSurvivesPRMThroughLIB(t *testing.T) {
+func TestCommercialMetadataSurvivesThroughSAW(t *testing.T) {
 	a := core.EmergION{
 		IDN: "E-COMMERCIAL-A",
 		STA: core.StateAccepted,
@@ -873,23 +770,6 @@ func TestCommercialMetadataSurvivesPRMThroughLIB(t *testing.T) {
 	}
 	if len(artifacts) != 1 || len(artifacts[0].Commercial) != 1 {
 		t.Fatalf("SAW commercial projection = %#v", artifacts)
-	}
-
-	entries, err := buildLIB(st)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 || len(entries[0].Commercial) != 1 {
-		t.Fatalf("LIB commercial projection = %#v", entries)
-	}
-
-	got := entries[0].Commercial[0]
-	if got.SourcePRMID != a.IDN ||
-		got.Model != "license" ||
-		got.Customer != "enterprise" ||
-		got.Value != "governed composition" ||
-		got.RevenuePath != "approved deployment" {
-		t.Fatalf("commercial projection changed: %#v", got)
 	}
 
 	if st.Accepted[a.IDN].EVO.Metadata.Monetization.Model != "license" {

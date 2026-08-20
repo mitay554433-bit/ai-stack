@@ -623,14 +623,6 @@ type saw struct {
 	CPSL         string
 }
 
-type libEntry struct {
-	SAWID        string
-	SAABID       string
-	MemberPRMIDs []string
-	Capabilities []string
-	Commercial   []commercialProjection
-}
-
 func extractSAWs(st core.State) ([]saw, error) {
 	assemblies, err := deriveSAABs(st)
 	if err != nil {
@@ -678,44 +670,6 @@ func extractSAWs(st core.State) ([]saw, error) {
 
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].ID < out[j].ID
-	})
-
-	return out, nil
-}
-
-func buildLIB(st core.State) ([]libEntry, error) {
-	artifacts, err := extractSAWs(st)
-	if err != nil {
-		return nil, err
-	}
-
-	out := make([]libEntry, 0, len(artifacts))
-	seen := map[string]bool{}
-
-	for _, artifact := range artifacts {
-		if artifact.ID == "" {
-			return nil, fmt.Errorf("LIB rejected empty SAW identity")
-		}
-
-		if seen[artifact.ID] {
-			return nil, fmt.Errorf(
-				"LIB rejected duplicate SAW identity %s",
-				artifact.ID,
-			)
-		}
-		seen[artifact.ID] = true
-
-		out = append(out, libEntry{
-			SAWID:        artifact.ID,
-			SAABID:       artifact.SAABID,
-			MemberPRMIDs: append([]string(nil), artifact.MemberPRMIDs...),
-			Capabilities: append([]string(nil), artifact.Capabilities...),
-			Commercial:   append([]commercialProjection(nil), artifact.Commercial...),
-		})
-	}
-
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].SAWID < out[j].SAWID
 	})
 
 	return out, nil
