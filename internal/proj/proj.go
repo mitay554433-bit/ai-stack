@@ -327,7 +327,6 @@ type saab struct {
 
 type cpsl struct {
 	SAABID  string
-	Members []string
 	Program string
 }
 
@@ -608,7 +607,6 @@ func compileCPSL(st core.State) ([]cpsl, error) {
 
 		out = append(out, cpsl{
 			SAABID:  assembly.ID,
-			Members: append([]string(nil), assembly.MemberPRMIDs...),
 			Program: b.String(),
 		})
 	}
@@ -622,8 +620,6 @@ type saw struct {
 	MemberPRMIDs []string
 	Capabilities []string
 	Commercial   []commercialProjection
-	BuildNodes   []core.BuildNode
-	BuildEdges   []core.BuildEdge
 	CPSL         string
 }
 
@@ -674,8 +670,6 @@ func extractSAWs(st core.State) ([]saw, error) {
 			MemberPRMIDs: append([]string(nil), assembly.MemberPRMIDs...),
 			Capabilities: append([]string(nil), assembly.Capabilities...),
 			Commercial:   append([]commercialProjection(nil), assembly.Commercial...),
-			BuildNodes:   append([]core.BuildNode(nil), assembly.BuildNodes...),
-			BuildEdges:   append([]core.BuildEdge(nil), assembly.BuildEdges...),
 			CPSL:         program.Program,
 		}
 
