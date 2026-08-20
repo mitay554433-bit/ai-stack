@@ -260,55 +260,12 @@ func TestPRMCrystallizesAcceptedGovernedPrimitive(t *testing.T) {
 		)
 	}
 
-	if got.SourceHash != em.MEM.SourceHash {
-		t.Fatalf(
-			"source hash = %q want %q",
-			got.SourceHash,
-			em.MEM.SourceHash,
-		)
-	}
-
-	if got.KinRoot != predecessor.IDN {
-		t.Fatalf(
-			"Kin root = %q want %q",
-			got.KinRoot,
-			predecessor.IDN,
-		)
-	}
-
-	if got.Archonym != "VERITEX PRIMITIVE" {
-		t.Fatalf("Archonym = %q", got.Archonym)
-	}
-
-	if len(got.Capabilities) != 2 ||
-		got.Capabilities[0] != "ANALYZE" ||
-		got.Capabilities[1] != "SIMULATE" {
-		t.Fatalf("capabilities = %#v", got.Capabilities)
-	}
-
-	if len(got.Facts) != 2 {
-		t.Fatalf("facts = %#v", got.Facts)
-	}
-
-	if got.Relationships["uses"] != "bounded-input" ||
-		got.Relationships["produces"] != "bounded-output" {
-		t.Fatalf("relationships = %#v", got.Relationships)
-	}
-
-	if len(got.Facets) != 2 {
-		t.Fatalf("facets = %#v", got.Facets)
-	}
-
 	if len(got.BuildNodes) != 2 {
 		t.Fatalf("build nodes = %#v", got.BuildNodes)
 	}
 
 	if len(got.BuildEdges) != 1 {
 		t.Fatalf("build edges = %#v", got.BuildEdges)
-	}
-
-	if len(got.Delta) != 1 || got.Delta[0] != "DC:+:SIMULATE" {
-		t.Fatalf("delta = %#v", got.Delta)
 	}
 
 	// PRM deliberately has no Gaps field. BRIDGEGAP remains unresolved
@@ -534,54 +491,6 @@ func TestSAABRejectsDanglingCompositionTarget(t *testing.T) {
 
 	if _, err := deriveSAABs(st); err == nil {
 		t.Fatal("dangling COMPOSITION_KIN unexpectedly formed SAAB")
-	}
-}
-
-func TestSAABPreservesSovereignKinRoots(t *testing.T) {
-	rootA := core.EmergION{
-		IDN: "E-KIN-A",
-		STA: core.StateAccepted,
-		MEM: core.Memory{
-			SourceHash: "kin-a",
-		},
-		REL: map[string]string{
-			"COMPOSITION_KIN": "E-KIN-B",
-		},
-	}
-
-	rootB := core.EmergION{
-		IDN: "E-KIN-B",
-		STA: core.StateAccepted,
-		MEM: core.Memory{
-			SourceHash: "kin-b",
-		},
-	}
-
-	st := core.EmptyState()
-	st.Accepted[rootA.IDN] = rootA
-	st.Accepted[rootB.IDN] = rootB
-
-	assemblies, err := deriveSAABs(st)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(assemblies) != 1 {
-		t.Fatalf("SAAB count = %d want 1", len(assemblies))
-	}
-
-	got := assemblies[0]
-
-	if len(got.KinRoots) != 2 {
-		t.Fatalf(
-			"sovereign Kin roots collapsed: %#v",
-			got.KinRoots,
-		)
-	}
-
-	if got.KinRoots[0] != rootA.IDN ||
-		got.KinRoots[1] != rootB.IDN {
-		t.Fatalf("Kin roots = %#v", got.KinRoots)
 	}
 }
 
@@ -949,23 +858,6 @@ func TestCommercialMetadataSurvivesPRMThroughLIB(t *testing.T) {
 	st := core.EmptyState()
 	st.Accepted[a.IDN] = a
 	st.Accepted[b.IDN] = b
-
-	prms, err := crystallizePRMs(st)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var sourcePRM *prm
-	for i := range prms {
-		if prms[i].SourceEmergIONID == a.IDN {
-			sourcePRM = &prms[i]
-			break
-		}
-	}
-
-	if sourcePRM == nil || sourcePRM.Monetization == nil {
-		t.Fatal("governed monetization did not reach PRM")
-	}
 
 	assemblies, err := deriveSAABs(st)
 	if err != nil {

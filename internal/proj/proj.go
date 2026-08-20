@@ -60,8 +60,8 @@ func rows(st core.State) []row {
 
 type convergenceRow struct {
 	ID            string
-	Archonym      string
 	Kin           string
+	Archonym      string
 	Summary       string
 	Topology      string
 	Facets        string
@@ -73,51 +73,28 @@ type convergenceRow struct {
 
 type prm struct {
 	SourceEmergIONID string
-	SourceHash       string
-	KinRoot          string
-	Archonym         string
-	Capabilities     []string
-	Facts            []string
 	Relationships    map[string]string
-	Facets           []core.Facet
 	BuildNodes       []core.BuildNode
 	BuildEdges       []core.BuildEdge
-	Monetization     *core.Monetization
-	Delta            []string
 }
 
 func crystallizePRMs(st core.State) ([]prm, error) {
 	out := make([]prm, 0, len(st.Accepted))
 
 	for _, em := range st.Accepted {
-		root, err := livefield.AcceptedKinRoot(st.Accepted, st.Returned, em.IDN)
-		if err != nil {
-			return nil, err
-		}
 
 		item := prm{
 			SourceEmergIONID: em.IDN,
-			SourceHash:       em.MEM.SourceHash,
-			KinRoot:          root,
-			Capabilities:     append([]string(nil), em.CAP...),
-			Facts:            append([]string(nil), em.VAL.Facts...),
 			Relationships:    map[string]string{},
-			Delta:            append([]string(nil), em.EVO.Delta...),
 		}
 
-		for key, value := range em.REL {
-			item.Relationships[key] = value
+		if target := strings.TrimSpace(em.REL["COMPOSITION_KIN"]); target != "" {
+			item.Relationships["COMPOSITION_KIN"] = target
 		}
 
 		if em.EVO.Metadata != nil {
-			item.Archonym = em.EVO.Metadata.Archonym
-			item.Facets = append([]core.Facet(nil), em.EVO.Metadata.Facets...)
 			item.BuildNodes = append([]core.BuildNode(nil), em.EVO.Metadata.BuildNodes...)
 			item.BuildEdges = append([]core.BuildEdge(nil), em.EVO.Metadata.BuildEdges...)
-			if em.EVO.Metadata.Monetization != nil {
-				value := *em.EVO.Metadata.Monetization
-				item.Monetization = &value
-			}
 		}
 
 		out = append(out, item)
@@ -341,7 +318,6 @@ type commercialProjection struct {
 type saab struct {
 	ID               string
 	MemberPRMIDs     []string
-	KinRoots         []string
 	Capabilities     []string
 	Commercial       []commercialProjection
 	CompositionLinks []saabLink
@@ -451,31 +427,29 @@ func deriveSAABs(st core.State) ([]saab, error) {
 			MemberPRMIDs: append([]string(nil), members...),
 		}
 
-		kinSet := map[string]bool{}
 		capSet := map[string]bool{}
 		linkSet := map[string]bool{}
 
 		for _, memberID := range members {
 			item := byID[memberID]
 
-			if item.KinRoot != "" {
-				kinSet[item.KinRoot] = true
-			}
-
-			if item.Monetization != nil {
+			accepted := st.Accepted[memberID]
+			if accepted.EVO.Metadata != nil &&
+				accepted.EVO.Metadata.Monetization != nil {
+				monetization := accepted.EVO.Metadata.Monetization
 				assembly.Commercial = append(
 					assembly.Commercial,
 					commercialProjection{
 						SourcePRMID: memberID,
-						Model:       item.Monetization.Model,
-						Customer:    item.Monetization.Customer,
-						Value:       item.Monetization.Value,
-						RevenuePath: item.Monetization.RevenuePath,
+						Model:       monetization.Model,
+						Customer:    monetization.Customer,
+						Value:       monetization.Value,
+						RevenuePath: monetization.RevenuePath,
 					},
 				)
 			}
 
-			for _, capability := range item.Capabilities {
+			for _, capability := range accepted.CAP {
 				if capability != "" {
 					capSet[capability] = true
 				}
@@ -522,14 +496,6 @@ func deriveSAABs(st core.State) ([]saab, error) {
 				)
 			}
 		}
-
-		for root := range kinSet {
-			assembly.KinRoots = append(
-				assembly.KinRoots,
-				root,
-			)
-		}
-		sort.Strings(assembly.KinRoots)
 
 		for capability := range capSet {
 			assembly.Capabilities = append(
@@ -602,10 +568,6 @@ func compileCPSL(st core.State) ([]cpsl, error) {
 
 		for _, member := range assembly.MemberPRMIDs {
 			fmt.Fprintf(&b, "P|%q\n", member)
-		}
-
-		for _, root := range assembly.KinRoots {
-			fmt.Fprintf(&b, "K|%q\n", root)
 		}
 
 		for _, capability := range assembly.Capabilities {
