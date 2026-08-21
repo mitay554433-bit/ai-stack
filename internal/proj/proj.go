@@ -1,6 +1,7 @@
 package proj
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"emergion-sovereign-runtime/internal/core"
 	livefield "emergion-sovereign-runtime/internal/field"
@@ -25,21 +27,42 @@ func JSON(path string, st core.State) error {
 }
 
 type row struct {
-	ID      string
-	State   string
-	Summary string
-	Risk    string
+	ID         string
+	State      string
+	Summary    string
+	Risk       string
+	Proof      string
+	Governance string
 }
 
 func rows(st core.State) []row {
 	var out []row
 	add := func(m map[string]core.EmergION) {
 		for _, e := range m {
+			proof := "source=" + e.MEM.SourceHash
+			if e.VAL.Recoil && e.VAL.WVC {
+				proof += "; recoil+wvc=PASS"
+			}
+			governance := "awaiting HUMAN_FINAL"
+			switch e.STA {
+			case core.StateAccepted:
+				governance = "HUMAN_FINAL approved; REG accepted"
+			case core.StateApproved:
+				governance = "HUMAN_FINAL approved"
+			case core.StateHeld:
+				governance = "HUMAN_FINAL held"
+			case core.StateRejected:
+				governance = "HUMAN_FINAL rejected"
+			case core.StateReturned:
+				governance = "HUMAN_FINAL returned for rework"
+			}
 			out = append(out, row{
-				ID:      e.IDN,
-				State:   e.STA,
-				Summary: e.MEM.Summary,
-				Risk:    e.VAL.Risk,
+				ID:         e.IDN,
+				State:      e.STA,
+				Summary:    e.MEM.Summary,
+				Risk:       e.VAL.Risk,
+				Proof:      proof,
+				Governance: governance,
 			})
 		}
 	}
@@ -224,6 +247,8 @@ code{color:#a78bfa}
 <th>EmergION</th>
 <th>State</th>
 <th>Risk</th>
+<th>Evidence proof</th>
+<th>Governance</th>
 <th>Meaning</th>
 </tr>
 </thead>
@@ -233,6 +258,8 @@ code{color:#a78bfa}
 <td><code>{{.ID}}</code></td>
 <td class="{{.State}}">{{.State}}</td>
 <td>{{.Risk}}</td>
+<td><code>{{.Proof}}</code></td>
+<td>{{.Governance}}</td>
 <td>{{.Summary}}</td>
 </tr>
 {{end}}
@@ -299,6 +326,80 @@ func EnsureOutput(root string) (string, error) {
 		return "", err
 	}
 	return root, nil
+}
+
+// Receipt is the commit marker for one current projection. Consumers can use
+// the hashes to reject a mixed or stale field.json/field.html pair.
+type Receipt struct {
+	TipHash   string    `json:"tip_hash"`
+	Events    int       `json:"events"`
+	JSONHash  string    `json:"field_json_sha256"`
+	HTMLHash  string    `json:"field_html_sha256"`
+	Generated time.Time `json:"generated_at"`
+}
+
+func fileHash(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(b)), nil
+}
+
+func replaceFile(tmp, final string) error {
+	if err := os.Rename(tmp, final); err != nil {
+		return fmt.Errorf("publish %s: %w", filepath.Base(final), err)
+	}
+	return nil
+}
+
+// Current publishes both compatibility projections and writes the receipt
+// last. The receipt is the atomic freshness boundary for operator clients.
+func Current(root string, st core.State) (Receipt, error) {
+	if _, err := EnsureOutput(root); err != nil {
+		return Receipt{}, err
+	}
+	tmp, err := os.MkdirTemp(root, ".projection-*")
+	if err != nil {
+		return Receipt{}, err
+	}
+	defer os.RemoveAll(tmp)
+
+	jsonTmp := filepath.Join(tmp, "field.json")
+	htmlTmp := filepath.Join(tmp, "field.html")
+	if err := JSON(jsonTmp, st); err != nil {
+		return Receipt{}, err
+	}
+	if err := HTML(htmlTmp, st); err != nil {
+		return Receipt{}, err
+	}
+	jsonHash, err := fileHash(jsonTmp)
+	if err != nil {
+		return Receipt{}, err
+	}
+	htmlHash, err := fileHash(htmlTmp)
+	if err != nil {
+		return Receipt{}, err
+	}
+	receipt := Receipt{TipHash: st.TipHash, Events: st.Events, JSONHash: jsonHash, HTMLHash: htmlHash, Generated: time.Now().UTC()}
+	receiptBytes, err := json.MarshalIndent(receipt, "", "  ")
+	if err != nil {
+		return Receipt{}, err
+	}
+	receiptTmp := filepath.Join(tmp, "projection.current.json")
+	if err := os.WriteFile(receiptTmp, receiptBytes, 0o644); err != nil {
+		return Receipt{}, err
+	}
+	if err := replaceFile(jsonTmp, filepath.Join(root, "field.json")); err != nil {
+		return Receipt{}, err
+	}
+	if err := replaceFile(htmlTmp, filepath.Join(root, "field.html")); err != nil {
+		return Receipt{}, err
+	}
+	if err := replaceFile(receiptTmp, filepath.Join(root, "projection.current.json")); err != nil {
+		return Receipt{}, err
+	}
+	return receipt, nil
 }
 
 type saabLink struct {

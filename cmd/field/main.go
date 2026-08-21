@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -69,17 +73,88 @@ func findEmergION(st core.State, id string) (core.EmergION, bool) {
 	return core.EmergION{}, false
 }
 
-func renderField(s *store.Store, out string) {
-	if _, err := proj.EnsureOutput(out); err != nil {
-		fail(err)
-	}
+func renderField(s *store.Store, out string) proj.Receipt {
 	st := loadState(s)
-	if err := proj.JSON(filepath.Join(out, "field.json"), st); err != nil {
+	receipt, err := proj.Current(out, st)
+	if err != nil {
 		fail(err)
 	}
-	if err := proj.HTML(filepath.Join(out, "field.html"), st); err != nil {
-		fail(err)
+	return receipt
+}
+
+type lineageExportReceipt struct {
+	Bundle     string    `json:"bundle"`
+	SHA256     string    `json:"sha256"`
+	Head       string    `json:"head"`
+	Branch     string    `json:"branch"`
+	ExportedAt time.Time `json:"exported_at"`
+}
+
+func gitOutput(repo string, args ...string) (string, error) {
+	cmdArgs := append([]string{"-C", repo}, args...)
+	out, err := exec.Command("git", cmdArgs...).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+// exportLineage creates a complete, verified bundle at a human-granted local
+// transfer boundary. It never changes repository state or uploads externally.
+func exportLineage(destination string) (lineageExportReceipt, error) {
+	repo, err := gitOutput(".", "rev-parse", "--show-toplevel")
+	if err != nil {
+		return lineageExportReceipt{}, err
+	}
+	head, err := gitOutput(repo, "rev-parse", "HEAD")
+	if err != nil {
+		return lineageExportReceipt{}, err
+	}
+	branch, err := gitOutput(repo, "branch", "--show-current")
+	if err != nil {
+		return lineageExportReceipt{}, err
+	}
+	if err := os.MkdirAll(destination, 0o700); err != nil {
+		return lineageExportReceipt{}, err
+	}
+	name := "LINEAGE_HEAD_" + head[:7] + ".bundle"
+	final := filepath.Join(destination, name)
+	tmp, err := os.CreateTemp(destination, ".lineage-*.bundle")
+	if err != nil {
+		return lineageExportReceipt{}, err
+	}
+	tmpPath := tmp.Name()
+	if err := tmp.Close(); err != nil {
+		return lineageExportReceipt{}, err
+	}
+	defer os.Remove(tmpPath)
+	if _, err := gitOutput(repo, "bundle", "create", tmpPath, "--all"); err != nil {
+		return lineageExportReceipt{}, err
+	}
+	if _, err := gitOutput(repo, "bundle", "verify", tmpPath); err != nil {
+		return lineageExportReceipt{}, err
+	}
+	if err := os.Rename(tmpPath, final); err != nil {
+		return lineageExportReceipt{}, err
+	}
+	hash, err := hashFile(final)
+	if err != nil {
+		return lineageExportReceipt{}, err
+	}
+	return lineageExportReceipt{Bundle: final, SHA256: hash, Head: head, Branch: branch, ExportedAt: time.Now().UTC()}, nil
 }
 
 func main() {
@@ -160,10 +235,11 @@ func main() {
 			fail(err)
 		}
 
-		renderField(s, *output)
+		receipt := renderField(s, *output)
 		printJSON(map[string]any{
 			"captured":         ids,
 			"dropzone_cleared": true,
+			"projection":       receipt,
 		})
 
 	case "run":
@@ -192,8 +268,8 @@ func main() {
 			*dropzone,
 			*poll,
 			func(id string) {
-				renderField(s, *output)
-				fmt.Println(id, "AT_GOV")
+				receipt := renderField(s, *output)
+				fmt.Println(id, "AT_GOV", "PROJECTION_TIP", receipt.TipHash)
 			},
 			func(cycleCtx context.Context) error {
 				circulated, err := sawRuntime.CirculateSAWs(cycleCtx)
@@ -485,17 +561,12 @@ func main() {
 		if len(args) > 1 {
 			out = args[1]
 		}
-		if _, err := proj.EnsureOutput(out); err != nil {
-			fail(err)
-		}
-		st := loadState(s)
-		if err := proj.JSON(filepath.Join(out, "field.json"), st); err != nil {
-			fail(err)
-		}
-		if err := proj.HTML(filepath.Join(out, "field.html"), st); err != nil {
-			fail(err)
-		}
-		fmt.Println(filepath.Join(out, "field.html"))
+		receipt := renderField(s, out)
+		printJSON(map[string]any{
+			"html":       filepath.Join(out, "field.html"),
+			"receipt":    filepath.Join(out, "projection.current.json"),
+			"projection": receipt,
+		})
 	case "verify":
 		if _, err := s.Events(); err != nil {
 			fail(err)
@@ -509,6 +580,16 @@ func main() {
 			fail(err)
 		}
 		printJSON(map[string]any{"status": "PASS", "evidence_verified": n, "orphans_removed": removed})
+	case "export-lineage":
+		destination := "."
+		if len(args) > 1 {
+			destination = args[1]
+		}
+		receipt, err := exportLineage(destination)
+		if err != nil {
+			fail(err)
+		}
+		printJSON(receipt)
 	case "adapters":
 		printJSON(adapters.Catalog(gemma.Validate() == nil))
 	case "axioms":
@@ -544,6 +625,7 @@ Commands:
   safe-action                  execute at most one eligible bounded CAP_ONLY action
   render [directory]           static JSON and HTML FIELD projection
   verify                       verify chain/evidence and remove orphan objects
+  export-lineage [directory]   create and verify a complete named Git bundle for transfer
   adapters                     show bounded capability adapters
   axioms                       show immutable semantic axioms
 

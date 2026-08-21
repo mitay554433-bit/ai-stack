@@ -1,11 +1,60 @@
 package proj
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"emergion-sovereign-runtime/internal/core"
 )
+
+func TestCurrentPublishesFreshnessReceipt(t *testing.T) {
+	root := t.TempDir()
+	st := core.State{
+		AtGOV: map[string]core.EmergION{}, Approved: map[string]core.EmergION{},
+		Accepted: map[string]core.EmergION{}, Held: map[string]core.EmergION{},
+		Rejected: map[string]core.EmergION{}, Returned: map[string]core.EmergION{},
+		Events: 7, TipHash: "tip-7",
+	}
+
+	receipt, err := Current(root, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.TipHash != st.TipHash || receipt.Events != st.Events {
+		t.Fatalf("receipt = %#v", receipt)
+	}
+	for _, name := range []string{"field.json", "field.html", "projection.current.json"} {
+		if _, err := os.Stat(filepath.Join(root, name)); err != nil {
+			t.Fatalf("%s not published: %v", name, err)
+		}
+	}
+
+	b, err := os.ReadFile(filepath.Join(root, "projection.current.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var published Receipt
+	if err := json.Unmarshal(b, &published); err != nil {
+		t.Fatal(err)
+	}
+	if published != receipt {
+		t.Fatalf("published receipt = %#v, want %#v", published, receipt)
+	}
+	jsonHash, err := fileHash(filepath.Join(root, "field.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	htmlHash, err := fileHash(filepath.Join(root, "field.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jsonHash != receipt.JSONHash || htmlHash != receipt.HTMLHash {
+		t.Fatal("projection hashes do not match freshness receipt")
+	}
+}
 
 func TestSpatialConvergenceZoneContainsAcceptedOnly(t *testing.T) {
 	accepted := core.EmergION{

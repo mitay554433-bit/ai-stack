@@ -58,10 +58,15 @@ The implementation uses:
 ```text
 one COSL event stream
 + one compressed evidence object per unique source
-+ rebuildable projections
++ rebuildable projections with an atomic current receipt
 ```
 
 Candidate, decision, and REG events are the only durable semantic transitions. Source objects are deduplicated by SHA-256 and gzip-compressed. The Dropzone is deleted after verified capture. Orphan evidence is removed by verification.
+
+`projection.current.json` is published last and binds the JSON and HTML
+projection hashes to the reconstructed COSL tip. It is a freshness/projection
+receipt, never semantic authority. The operator projection keeps evidence proof
+separate from HUMAN_FINAL and REG governance status.
 
 ## Reasoning
 
@@ -92,6 +97,11 @@ FIELD observes
 ## External capability boundary
 
 Programs, patents, mergers and acquisitions, websites, stores, email, payments, customers, products, and sales will be added as bounded CAP adapters. Read, analysis, drafting, simulation, and testing may be automated. Sending, payment movement, contracts, acquisitions, deployment, and REG acceptance remain gated.
+
+Local lineage transfer uses the existing Git repository as evidence: a bounded
+command creates and verifies a complete bundle in a human-authorized local
+directory. It does not create a second registry, background uploader, or new
+authority.
 
 ## Independence path
 

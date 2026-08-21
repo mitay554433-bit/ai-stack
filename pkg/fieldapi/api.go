@@ -5,7 +5,6 @@ package fieldapi
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"emergion-sovereign-runtime/internal/analytics"
 	"emergion-sovereign-runtime/internal/core"
@@ -83,13 +82,16 @@ func (r *Runtime) Render(dir string) error {
 	if err != nil {
 		return err
 	}
-	if _, err = proj.EnsureOutput(dir); err != nil {
-		return err
+	_, err = proj.Current(dir, st)
+	return err
+}
+
+func (r *Runtime) RenderCurrent(dir string) (proj.Receipt, error) {
+	st, err := r.state()
+	if err != nil {
+		return proj.Receipt{}, err
 	}
-	if err = proj.JSON(filepath.Join(dir, "field.json"), st); err != nil {
-		return err
-	}
-	return proj.HTML(filepath.Join(dir, "field.html"), st)
+	return proj.Current(dir, st)
 }
 
 func (r *Runtime) CirculateSAWs(

@@ -21,7 +21,8 @@ EmergER → EmergION candidate → RECOIL → WVC → GOV/HUMAN_FINAL → REG �
 - explicit HUMAN_FINAL decisions,
 - REG acceptance only after approval,
 - deterministic FIELD reconstruction,
-- automatic JSON and HTML FIELD projections,
+- automatic JSON and HTML FIELD projections with a hash-bound current receipt,
+- operator-visible evidence proof and governance status,
 - CPU and FIELD analytics,
 - a native embedding API under `pkg/fieldapi`,
 - cross-platform native builds.
@@ -74,6 +75,21 @@ field decide E-... APPROVE "reason"
 ```
 
 Approval creates a GOV receipt and a separate REG acceptance receipt. FIELD projections are refreshed automatically.
+
+The current projection boundary is `outputs/projection.current.json`. It is
+written after `field.json` and `field.html` and binds both files to the current
+COSL tip with SHA-256 hashes. Operator clients should accept a projection only
+when it matches that receipt.
+
+To create a complete, verified lineage artifact at an already authorized local
+transfer directory:
+
+```text
+field export-lineage /sdcard/Download
+```
+
+The command prints the exact bundle path, branch, HEAD, SHA-256, and export
+time. It does not upload externally or expand authority.
 
 ## Independence
 
