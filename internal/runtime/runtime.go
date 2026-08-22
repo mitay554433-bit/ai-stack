@@ -1188,6 +1188,148 @@ func executionAlreadyObserved(
 	return false
 }
 
+func (r Runtime) AuthorizeAction(
+	emergionID string,
+	adapter string,
+	action string,
+	reasonText string,
+	localGemma bool,
+) (string, error) {
+	if r.Store == nil {
+		return "", fmt.Errorf("runtime store not configured")
+	}
+
+	events, err := r.Store.Events()
+	if err != nil {
+		return "", err
+	}
+
+	st, err := livefield.Rebuild(events)
+	if err != nil {
+		return "", err
+	}
+
+	em, ok := st.Accepted[emergionID]
+	if !ok {
+		return "", fmt.Errorf(
+			"EmergION %q is not REG-accepted",
+			emergionID,
+		)
+	}
+
+	var facets []string
+	if em.EVO.Metadata != nil {
+		for _, facet := range em.EVO.Metadata.Facets {
+			facets = append(facets, string(facet))
+		}
+	}
+
+	derivable := false
+	for _, candidate := range adapters.DeriveActionCandidates(
+		facets,
+		em.CAP,
+		localGemma,
+	) {
+		if candidate.Adapter == adapter &&
+			candidate.Action == action {
+			derivable = true
+			break
+		}
+	}
+
+	if !derivable {
+		return "", fmt.Errorf(
+			"action %s:%s is not derivable from accepted EmergION %s",
+			adapter,
+			action,
+			em.IDN,
+		)
+	}
+
+	receipt := core.ActionAuthorizationReceipt{
+		EmergIONID: em.IDN,
+		Adapter:    adapter,
+		Action:     action,
+		Authority:  "HUMAN_FINAL",
+		Authorized: true,
+		Reason:     reasonText,
+		At:         time.Now().UTC(),
+	}
+
+	return r.Store.SaveActionAuthorization(receipt)
+}
+
+func (r Runtime) ExecuteAction(
+	ctx context.Context,
+	emergionID string,
+	adapter string,
+	action string,
+	gemma reason.GemmaCLI,
+) (adapters.ExecutionRequest, adapters.ExecutionResult, core.EmergION, bool, error) {
+	if r.Store == nil {
+		return adapters.ExecutionRequest{}, adapters.ExecutionResult{}, core.EmergION{}, false, fmt.Errorf("runtime store not configured")
+	}
+
+	events, err := r.Store.Events()
+	if err != nil {
+		return adapters.ExecutionRequest{}, adapters.ExecutionResult{}, core.EmergION{}, false, err
+	}
+
+	st, err := livefield.Rebuild(events)
+	if err != nil {
+		return adapters.ExecutionRequest{}, adapters.ExecutionResult{}, core.EmergION{}, false, err
+	}
+
+	request, err := adapters.PrepareExecution(
+		st,
+		emergionID,
+		adapter,
+		action,
+		gemma.Validate() == nil,
+	)
+	if err != nil {
+		return adapters.ExecutionRequest{}, adapters.ExecutionResult{}, core.EmergION{}, false, err
+	}
+
+	var result adapters.ExecutionResult
+	var execErr error
+
+	switch request.Adapter {
+	case "LOCAL_GEMMA":
+		executor := adapters.LocalGemmaExecutor{
+			Store: r.Store,
+			Gemma: gemma,
+		}
+		result, execErr = executor.Execute(request)
+	default:
+		return request, adapters.ExecutionResult{}, core.EmergION{}, false, fmt.Errorf(
+			"no local executor connected for adapter %s",
+			request.Adapter,
+		)
+	}
+
+	if execErr != nil && result.Error == "" {
+		result.Error = execErr.Error()
+	}
+
+	result = adapters.BindExecutionResult(request, result)
+
+	signal, duplicate, err := r.CaptureGovernedExecutionResult(
+		ctx,
+		request,
+		result,
+	)
+	if err != nil {
+		return request, result, core.EmergION{}, false, err
+	}
+
+	if execErr != nil {
+		return request, result, signal, duplicate, execErr
+	}
+
+	return request, result, signal, duplicate, nil
+}
+
 func (r Runtime) ExecuteOneSafeAction(
 	ctx context.Context,
 	gemma reason.GemmaCLI,

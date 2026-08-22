@@ -5,7 +5,9 @@ package fieldapi
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"emergion-sovereign-runtime/internal/adapters"
 	"emergion-sovereign-runtime/internal/analytics"
 	"emergion-sovereign-runtime/internal/core"
 	livefield "emergion-sovereign-runtime/internal/field"
@@ -77,6 +79,141 @@ func (r *Runtime) Decide(id, decision, reasonText string) error {
 	}
 	return nil
 }
+func (r *Runtime) Actions(
+	emergionID string,
+	localGemma bool,
+) ([]adapters.ActionCandidate, error) {
+	st, err := r.state()
+	if err != nil {
+		return nil, err
+	}
+
+	em, ok := st.Accepted[emergionID]
+	if !ok {
+		return nil, fmt.Errorf(
+			"EmergION %q is not REG-accepted",
+			emergionID,
+		)
+	}
+
+	var facets []string
+	if em.EVO.Metadata != nil {
+		for _, facet := range em.EVO.Metadata.Facets {
+			facets = append(facets, string(facet))
+		}
+	}
+
+	return adapters.DeriveActionCandidates(
+		facets,
+		em.CAP,
+		localGemma,
+	), nil
+}
+
+func (r *Runtime) Authorize(
+	emergionID string,
+	adapter string,
+	action string,
+	reasonText string,
+	localGemma bool,
+) (string, error) {
+	return (fieldruntime.Runtime{
+		Store: r.store,
+	}).AuthorizeAction(
+		emergionID,
+		adapter,
+		action,
+		reasonText,
+		localGemma,
+	)
+}
+
+func (r *Runtime) Execute(
+	ctx context.Context,
+	emergionID string,
+	adapter string,
+	action string,
+	gemma reason.GemmaCLI,
+) (adapters.ExecutionRequest, adapters.ExecutionResult, core.EmergION, bool, error) {
+	return (fieldruntime.Runtime{
+		Store: r.store,
+	}).ExecuteAction(
+		ctx,
+		emergionID,
+		adapter,
+		action,
+		gemma,
+	)
+}
+
+func (r *Runtime) SafeAction(
+	ctx context.Context,
+	gemma reason.GemmaCLI,
+) (core.EmergION, bool, error) {
+	return (fieldruntime.Runtime{
+		Store: r.store,
+	}).ExecuteOneSafeAction(
+		ctx,
+		gemma,
+	)
+}
+
+func (r *Runtime) GovernedCycle(
+	ctx context.Context,
+	gemma reason.GemmaCLI,
+) ([]core.EmergION, core.EmergION, bool, error) {
+	circulated, err := r.CirculateSAWs(ctx)
+	if err != nil {
+		return nil, core.EmergION{}, false, err
+	}
+
+	signal, executed, err := (fieldruntime.Runtime{
+		Store: r.store,
+	}).ExecuteOneSafeAction(
+		ctx,
+		gemma,
+	)
+	if err != nil {
+		return circulated, core.EmergION{}, false, err
+	}
+
+	return circulated, signal, executed, nil
+}
+
+func (r *Runtime) Run(
+	ctx context.Context,
+	dropzone string,
+	interval time.Duration,
+	gemma reason.GemmaCLI,
+	onCapture func(string),
+	onCycle func([]core.EmergION, core.EmergION, bool),
+) error {
+	runtime := fieldruntime.Runtime{
+		Store:    r.store,
+		Reasoner: r.reasoner,
+	}
+
+	return runtime.Run(
+		ctx,
+		dropzone,
+		interval,
+		onCapture,
+		func(cycleCtx context.Context) error {
+			circulated, signal, executed, err :=
+				r.GovernedCycle(cycleCtx, gemma)
+			if err != nil {
+				return err
+			}
+
+			if onCycle != nil {
+				onCycle(circulated, signal, executed)
+			}
+
+			return nil
+		},
+	)
+}
+
 func (r *Runtime) Render(dir string) error {
 	st, err := r.state()
 	if err != nil {

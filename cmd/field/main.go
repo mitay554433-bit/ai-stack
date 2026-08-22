@@ -272,7 +272,8 @@ func main() {
 				fmt.Println(id, "AT_GOV", "PROJECTION_TIP", receipt.TipHash)
 			},
 			func(cycleCtx context.Context) error {
-				circulated, err := sawRuntime.CirculateSAWs(cycleCtx)
+				circulated, safeSignal, safeExecuted, err :=
+					sawRuntime.GovernedCycle(cycleCtx, gemma)
 				if err != nil {
 					return err
 				}
@@ -280,12 +281,6 @@ func main() {
 				for _, em := range circulated {
 					renderField(s, *output)
 					fmt.Println(em.IDN, "SAW_AT_GOV")
-				}
-
-				safeSignal, safeExecuted, err :=
-					rt.ExecuteOneSafeAction(cycleCtx, gemma)
-				if err != nil {
-					return err
 				}
 
 				if safeExecuted {
@@ -404,117 +399,44 @@ func main() {
 			fail(fmt.Errorf("authorize <emergion-id> <adapter> <action> [reason]"))
 		}
 
-		st := loadState(s)
-		em, ok := st.Accepted[args[1]]
-		if !ok {
-			fail(fmt.Errorf("EmergION %q is not REG-accepted", args[1]))
-		}
-
-		var facets []string
-		if em.EVO.Metadata != nil {
-			for _, facet := range em.EVO.Metadata.Facets {
-				facets = append(facets, string(facet))
-			}
-		}
-
-		derivable := false
-		for _, candidate := range adapters.DeriveActionCandidates(
-			facets,
-			em.CAP,
-			gemma.Validate() == nil,
-		) {
-			if candidate.Adapter == args[2] &&
-				candidate.Action == args[3] {
-				derivable = true
-				break
-			}
-		}
-
-		if !derivable {
-			fail(fmt.Errorf(
-				"action %s:%s is not derivable from accepted EmergION %s",
-				args[2],
-				args[3],
-				em.IDN,
-			))
-		}
-
 		reasonText := ""
 		if len(args) > 4 {
 			reasonText = args[4]
 		}
 
-		receipt := core.ActionAuthorizationReceipt{
-			EmergIONID: em.IDN,
-			Adapter:    args[2],
-			Action:     args[3],
-			Authority:  "HUMAN_FINAL",
-			Authorized: true,
-			Reason:     reasonText,
-			At:         time.Now().UTC(),
+		rt := fieldruntime.Runtime{
+			Store: s,
 		}
 
-		if _, err := s.SaveActionAuthorization(receipt); err != nil {
+		if _, err := rt.AuthorizeAction(
+			args[1],
+			args[2],
+			args[3],
+			reasonText,
+			gemma.Validate() == nil,
+		); err != nil {
 			fail(err)
 		}
 
 		renderField(s, *output)
-		fmt.Println(em.IDN, args[2], args[3], "AUTHORIZED")
+		fmt.Println(args[1], args[2], args[3], "AUTHORIZED")
 
 	case "execute":
 		if len(args) != 4 {
 			fail(fmt.Errorf("usage: field execute <emergion-id> <adapter> <action>"))
 		}
 
-		st := loadState(s)
-
-		request, err := adapters.PrepareExecution(
-			st,
-			args[1],
-			args[2],
-			args[3],
-			gemma.Validate() == nil,
-		)
-		if err != nil {
-			fail(err)
-		}
-
-		var result adapters.ExecutionResult
-		var execErr error
-
-		switch request.Adapter {
-		case "LOCAL_GEMMA":
-			executor := adapters.LocalGemmaExecutor{
-				Store: s,
-				Gemma: gemma,
-			}
-			result, execErr = executor.Execute(request)
-
-		default:
-			fail(fmt.Errorf(
-				"no local executor connected for adapter %s",
-				request.Adapter,
-			))
-		}
-
-		if execErr != nil && result.Error == "" {
-			result.Error = execErr.Error()
-		}
-
-		result = adapters.BindExecutionResult(request, result)
-
 		rt := fieldruntime.Runtime{
 			Store: s,
 		}
 
-		signal, duplicate, err := rt.CaptureGovernedExecutionResult(
+		request, result, signal, duplicate, execErr := rt.ExecuteAction(
 			context.Background(),
-			request,
-			result,
+			args[1],
+			args[2],
+			args[3],
+			gemma,
 		)
-		if err != nil {
-			fail(err)
-		}
 
 		printJSON(map[string]any{
 			"request":   request,
