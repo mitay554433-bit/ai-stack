@@ -2,6 +2,7 @@ package fieldapi
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -291,3 +292,125 @@ func TestCirculateSAWsDoesNothingWithoutGovernedComposition(t *testing.T) {
 }
 
 var _ = store.Hash
+
+func TestStatusJSONUsesExistingRuntimeState(t *testing.T) {
+	rt, err := Open(
+		filepath.Join(t.TempDir(), "state"),
+		sawCirculationReasoner{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wire, err := rt.StatusJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !json.Valid([]byte(wire)) {
+		t.Fatalf("StatusJSON returned invalid JSON: %q", wire)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(wire), &got); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := got["events"]; !ok {
+		t.Fatalf("StatusJSON missing canonical events metric: %s", wire)
+	}
+
+	if _, ok := got["tip_hash"]; !ok {
+		t.Fatalf("StatusJSON missing canonical tip hash: %s", wire)
+	}
+}
+
+func TestActionsJSONCannotBypassREGAcceptance(t *testing.T) {
+	rt, err := Open(
+		filepath.Join(t.TempDir(), "state"),
+		sawCirculationReasoner{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := rt.ActionsJSON("E-NOT-REG-ACCEPTED", true); err == nil {
+		t.Fatal("ActionsJSON bypassed REG acceptance")
+	}
+}
+
+func TestDecideBindingCannotBypassGOV(t *testing.T) {
+	rt, err := Open(
+		filepath.Join(t.TempDir(), "state"),
+		sawCirculationReasoner{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := rt.DecideBinding(
+		"E-NOT-AT-GOV",
+		"APPROVE",
+		"binding boundary rejection proof",
+	); err == nil {
+		t.Fatal("DecideBinding bypassed GOV")
+	}
+}
+
+func TestAuthorizeBindingCannotBypassREGAcceptance(t *testing.T) {
+	rt, err := Open(
+		filepath.Join(t.TempDir(), "state"),
+		sawCirculationReasoner{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := rt.AuthorizeBinding(
+		"E-NOT-REG-ACCEPTED",
+		"LOCAL_GEMMA",
+		"ANALYZE",
+		"binding boundary rejection proof",
+		true,
+	); err == nil {
+		t.Fatal("AuthorizeBinding bypassed REG acceptance")
+	}
+}
+
+func TestRenderCurrentJSONUsesCanonicalProjectionReceipt(t *testing.T) {
+	rt, err := Open(
+		filepath.Join(t.TempDir(), "state"),
+		sawCirculationReasoner{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "projection")
+
+	wire, err := rt.RenderCurrentJSON(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !json.Valid([]byte(wire)) {
+		t.Fatalf("RenderCurrentJSON returned invalid JSON: %q", wire)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal([]byte(wire), &got); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := got["tip_hash"]; !ok {
+		t.Fatalf("projection receipt missing tip_hash: %s", wire)
+	}
+
+	if _, ok := got["field_json_sha256"]; !ok {
+		t.Fatalf("projection receipt missing field_json_sha256: %s", wire)
+	}
+
+	if _, ok := got["field_html_sha256"]; !ok {
+		t.Fatalf("projection receipt missing field_html_sha256: %s", wire)
+	}
+}

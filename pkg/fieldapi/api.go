@@ -4,6 +4,7 @@ package fieldapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -270,4 +271,84 @@ func (r *Runtime) CirculateSAWs(
 	}
 
 	return out, nil
+}
+
+// StatusJSON exposes the existing runtime status through a primitive
+// serialization boundary suitable for native hosts.
+// It owns no state and derives no authority.
+func (r *Runtime) StatusJSON() (string, error) {
+	status, err := r.Status()
+	if err != nil {
+		return "", err
+	}
+
+	b, err := json.Marshal(status)
+	if err != nil {
+		return "", err
+	}
+
+	return string(b), nil
+}
+
+// ActionsJSON exposes the existing bounded action derivation as JSON.
+// Action authority and derivation remain owned by the existing runtime.
+func (r *Runtime) ActionsJSON(
+	emergionID string,
+	localGemma bool,
+) (string, error) {
+	actions, err := r.Actions(emergionID, localGemma)
+	if err != nil {
+		return "", err
+	}
+
+	b, err := json.Marshal(actions)
+	if err != nil {
+		return "", err
+	}
+
+	return string(b), nil
+}
+
+// DecideBinding is a primitive native-host entrypoint to the existing
+// HUMAN_FINAL decision path. It introduces no independent authority.
+func (r *Runtime) DecideBinding(
+	id string,
+	decision string,
+	reasonText string,
+) error {
+	return r.Decide(id, decision, reasonText)
+}
+
+// AuthorizeBinding is a primitive native-host entrypoint to the existing
+// governed action-authorization path.
+func (r *Runtime) AuthorizeBinding(
+	emergionID string,
+	adapter string,
+	action string,
+	reasonText string,
+	localGemma bool,
+) (string, error) {
+	return r.Authorize(
+		emergionID,
+		adapter,
+		action,
+		reasonText,
+		localGemma,
+	)
+}
+
+// RenderCurrentJSON exposes the existing hash-bound projection receipt.
+// FIELD remains a projection; this method creates no competing state.
+func (r *Runtime) RenderCurrentJSON(dir string) (string, error) {
+	receipt, err := r.RenderCurrent(dir)
+	if err != nil {
+		return "", err
+	}
+
+	b, err := json.Marshal(receipt)
+	if err != nil {
+		return "", err
+	}
+
+	return string(b), nil
 }
