@@ -109,3 +109,43 @@ return cString(`{"error":"decision failed"}`)
 
 return cString(`{"status":"success"}`)
 }
+
+//export FieldAuthorizeBinding
+func FieldAuthorizeBinding(
+stateRoot *C.char,
+emergionID *C.char,
+adapter *C.char,
+action *C.char,
+reasonText *C.char,
+localGemma C.int,
+) *C.char {
+if stateRoot == nil || emergionID == nil || adapter == nil || action == nil {
+return cString(`{"error":"state root, id, adapter, and action required"}`)
+}
+
+rt, err := fieldapi.Open(
+C.GoString(stateRoot),
+reason.GemmaFromEnv(),
+)
+if err != nil {
+return cString(`{"error":"runtime open failed"}`)
+}
+
+rText := ""
+if reasonText != nil {
+rText = C.GoString(reasonText)
+}
+
+authJSON, err := rt.AuthorizeBinding(
+C.GoString(emergionID),
+C.GoString(adapter),
+C.GoString(action),
+rText,
+localGemma != 0,
+)
+if err != nil {
+return cString(`{"error":"authorization failed"}`)
+}
+
+return cString(authJSON)
+}
