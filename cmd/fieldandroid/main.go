@@ -44,3 +44,32 @@ func FieldFree(p unsafe.Pointer) {
 }
 
 func main() {}
+
+//export FieldActionsJSON
+func FieldActionsJSON(
+	stateRoot *C.char,
+	emergionID *C.char,
+	localGemma C.int,
+) *C.char {
+	if stateRoot == nil || emergionID == nil {
+		return cString(`{"error":"state root and emergion id required"}`)
+	}
+
+	rt, err := fieldapi.Open(
+		C.GoString(stateRoot),
+		reason.GemmaFromEnv(),
+	)
+	if err != nil {
+		return cString(`{"error":"runtime open failed"}`)
+	}
+
+	wire, err := rt.ActionsJSON(
+		C.GoString(emergionID),
+		localGemma != 0,
+	)
+	if err != nil {
+		return cString(`{"error":"actions unavailable"}`)
+	}
+
+	return cString(wire)
+}
