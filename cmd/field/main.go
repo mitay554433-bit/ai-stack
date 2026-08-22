@@ -514,6 +514,8 @@ func main() {
 		printJSON(receipt)
 	case "adapters":
 		printJSON(adapters.Catalog(gemma.Validate() == nil))
+	case "daemon":
+		handleDaemonCommand(args, *state)
 	case "axioms":
 		printJSON(axiom.Dictionary)
 	default:
@@ -550,6 +552,7 @@ Commands:
   export-lineage [directory]   create and verify a complete named Git bundle for transfer
   adapters                     show bounded capability adapters
   axioms                       show immutable semantic axioms
+  daemon <start|status|stop>   manage background runtime daemon via IPC
 
 Environment:
   GEMMA_BIN, GEMMA_MODEL, GEMMA_THREADS, GEMMA_CONTEXT,
