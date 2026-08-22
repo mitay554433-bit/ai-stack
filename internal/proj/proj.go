@@ -222,7 +222,7 @@ func HTML(path string, st core.State) error {
 <meta name="viewport" content="width=device-width">
 <title>EmergION Projection</title>
 <style>
-body{font:15px system-ui;background:#090b12;color:#f3f4f6;margin:0;padding:2rem}
+body{font:15px system-ui;background:#020817;color:#e6eaf0;margin:0;padding:2rem}a{color:#c9a227}.ok,.good{color:#2ecc71}.bad,.err{color:#e74c3c}.muted{color:#8b95a8}.panel{background:#0f1c2e;border:1px solid #2a3548;border-radius:12px;padding:1rem;margin:0.75rem 0}h1,h2{color:#e6eaf0;border-bottom:1px solid #2d6cff;padding-bottom:0.35rem}code,pre{background:#0a1628;color:#e6eaf0;border:1px solid #2a3548}
 h1{font-size:1.5rem}
 h2{margin-top:2rem;font-size:1.15rem}
 table{width:100%;border-collapse:collapse}
